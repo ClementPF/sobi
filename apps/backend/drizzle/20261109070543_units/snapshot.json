@@ -1,0 +1,77 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "966cfe5b-64ab-4c1d-bad0-d22d1be4ee83",
+  "prevIds": [
+    "548e9059-59d3-449d-b267-d6b93f86025a"
+  ],
+  "footprints": [
+    {
+      "statementType": "create_enum",
+      "statementTarget": [
+        "enum",
+        "public",
+        "unit_system"
+      ],
+      "writes": [
+        "s|enum|public.unit_system",
+        "n|enum|public.unit_system",
+        "e|enum|public.unit_system",
+        "n|type|public.unit_system"
+      ],
+      "reads": [
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": [
+        "column",
+        "public",
+        "users",
+        "units"
+      ],
+      "writes": [
+        "s|col|public.users.units",
+        "n|col|public.users.units",
+        "e|col|public.users.units"
+      ],
+      "reads": [
+        "n|tbl|public.users",
+        "n|sch|public",
+        "n|enum|public.unit_system"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "name": "unit_system",
+        "values": [
+          "metric",
+          "imperial"
+        ],
+        "entityType": "enums"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "users",
+        "name": "units",
+        "type": "unit_system",
+        "typeSchema": "public",
+        "notNull": true,
+        "dimensions": 0,
+        "default": "'metric'",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    }
+  ]
+}

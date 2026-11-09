@@ -1,0 +1,27 @@
+{
+  "name": "sobi",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/backend",
+    "apps/mobile"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "prod": "docker compose -f docker-compose.prod.yml --env-file .env.production",
+    "prod:lan": "docker compose -f docker-compose.prod.yml -f docker-compose.lan.yml --env-file .env.production",
+    "test": "npm run test --workspaces --if-present",
+    "test:scripts": "python3 -m unittest discover -s scripts/tests"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.14.0",
+    "prettier": "^3.9.10",
+    "typescript-eslint": "^8.72.1"
+  }
+}
