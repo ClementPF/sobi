@@ -8,16 +8,19 @@ Usage on the server, from the repo root:
       | docker compose -f docker-compose.prod.yml -f docker-compose.lan.yml \
           --env-file .env.production exec -T db psql -U sobi -d sobi -v ON_ERROR_STOP=1
 
-Add --dry-run to print what would be imported and roll back. Re-running is safe: a day whose
+Use --set-rate 3/750 to earn the imported sets at the sheet's rate for that year without
+changing the exercises' own rates. Add --dry-run to print what would be imported and roll back. Re-running is safe: a day whose
 imported session (12:00) or drinks (from 20:00) already exist is skipped.
 
 Workouts CSV: the first row names an exercise per column; an empty header continues the
 exercise to its left. The first column holds the date, every other cell the reps of one set.
 A numeric header (the sheet's total-reps column) ends the exercise columns; a day with only
 a total is imported as one set of "Other".
-Drinks CSV: DATE, ABV (percent), V (CL) and an optional NOTES column. Rows without a usable
-volume need --missing-volume-ml (and --missing-abv, default 40). Dates are dd/mm/yy,
-dd/mm/yyyy or Excel serial numbers.
+Drinks CSV: DATE, ABV (percent), V (CL) and optional SDTD and NOTES columns; rows above the
+header (the sheet's summary) are skipped. A row without a usable volume is imported from its
+SDTD value as liquor at --missing-abv (default 40), or with --missing-volume-ml when there is
+no SDTD column; a row whose SDTD is 0 is skipped. Dates are dd/mm/yy, dd/mm/yyyy (a trailing
+time is ignored) or Excel serial numbers.
 """
 import argparse
 import csv
@@ -29,6 +32,8 @@ from pathlib import Path
 
 EXCEL_EPOCH = date(1899, 12, 30)
 OTHER = "Other"
+ETHANOL_G_PER_ML = Decimal("0.789")
+STD_DRINK_G = 14
 
 
 class CsvError(Exception):
@@ -39,7 +44,7 @@ def parse_date(text, where):
     text = text.strip()
     if re.fullmatch(r"\d{4,5}", text):
         return EXCEL_EPOCH + timedelta(days=int(text))
-    match = re.fullmatch(r"(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})", text)
+    match = re.fullmatch(r"(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})(?:\s+\d{1,2}(?::\d{2})*)?", text)
     if not match:
         raise CsvError(f"{where}: unreadable date {text!r}")
     day, month, year = (int(g) for g in match.groups())
@@ -92,7 +97,6 @@ def parse_workouts(path):
             current = cell.strip()
         if current:
             columns[index] = current
-    exercises = list(dict.fromkeys(columns.values()))
     days = []
     seen = {}
     for line, row in enumerate(rows[1:], start=2):
@@ -119,10 +123,10 @@ def parse_workouts(path):
             total = whole_reps(total_cell, f"{where} total")
             if total > 0:
                 sets.append((OTHER, total))
-                if OTHER not in exercises:
-                    exercises.append(OTHER)
         if sets:
             days.append((day, sets))
+    used = {name for _, sets in days for name, _ in sets}
+    exercises = [name for name in dict.fromkeys([*columns.values(), OTHER]) if name in used]
     return exercises, days
 
 
@@ -133,15 +137,19 @@ def whole_reps(cell, where):
     return int(reps)
 
 
-def parse_drinks(path, fallback=None):
+def parse_drinks(path, fallback=None, missing_abv=Decimal("40")):
     """Returns [(date, abv percent, volume ml, note), ...]; volumes are given in centiliters.
 
-    A row without a usable volume (blank, 0 or text) gets `fallback` = (abv, ml) when given.
+    A row without a usable volume (blank, 0 or text) is rebuilt from its SDTD cell at
+    `missing_abv` when the sheet has one, else gets `fallback` = (abv, ml) when given.
     """
     rows = read_rows(path)
-    if not rows:
+    start = next(
+        (i for i, row in enumerate(rows) if any(cell.strip().lower() == "date" for cell in row)), None
+    )
+    if start is None:
         return []
-    header = [cell.strip().lower() for cell in rows[0]]
+    header = [cell.strip().lower() for cell in rows[start]]
 
     def column(*names, required=True):
         for i, cell in enumerate(header):
@@ -153,8 +161,9 @@ def parse_drinks(path, fallback=None):
 
     date_col, abv_col, volume_col = column("date"), column("abv"), column("cl", "v ")
     note_col = column("note", required=False)
+    std_col = column("sdtd", required=False)
     drinks = []
-    for line, row in enumerate(rows[1:], start=2):
+    for line, row in enumerate(rows[start + 1 :], start=start + 2):
         if not row or not any(cell.strip() for cell in row):
             continue
         where = f"{path}:{line}"
@@ -163,10 +172,19 @@ def parse_drinks(path, fallback=None):
         note = cell(note_col) or None
         volume = cell(volume_col)
         if not is_number(volume) or Decimal(volume.replace(",", ".")) <= 0:
-            if fallback is None:
+            if std_col is not None:
+                std = parse_number(cell(std_col) or "0", where)
+                if std <= 0:
+                    print(f"{where}: no volume and SDTD 0, skipped ({note or 'no note'})", file=sys.stderr)
+                    continue
+                abv = missing_abv
+                volume_ml = int((std * STD_DRINK_G / (abv / 100) / ETHANOL_G_PER_ML).to_integral_value())
+                print(f"{where}: no volume, using {volume_ml} ml at {abv}% for {std} SDTD", file=sys.stderr)
+            elif fallback is None:
                 raise CsvError(f"{where}: no usable volume {volume!r}; see --missing-volume-ml")
-            abv, volume_ml = fallback
-            print(f"{where}: no volume, using {volume_ml} ml at {abv}% ({note or 'no note'})", file=sys.stderr)
+            else:
+                abv, volume_ml = fallback
+                print(f"{where}: no volume, using {volume_ml} ml at {abv}% ({note or 'no note'})", file=sys.stderr)
         else:
             abv = parse_number(cell(abv_col), where)
             volume_ml = int((parse_number(volume, where) * 10).to_integral_value())
@@ -183,7 +201,14 @@ def local_time(day, clock, tz):
     return f"(timestamp {quote(f'{day.isoformat()} {clock}')} at time zone {quote(tz)})"
 
 
-def build_sql(*, email, tz, workout_name, earn_drinks, earn_per, exercises, days, drinks, dry_run):
+def build_sql(
+    *, email, tz, workout_name, earn_drinks, earn_per, exercises, days, drinks, dry_run, set_rate=None
+):
+    if set_rate:
+        set_drinks, set_reps = set_rate
+        earned = f"round(v.amount::numeric / {set_reps} * {set_drinks}, 4)"
+    else:
+        earned = "round(v.amount::numeric / e.earn_per * e.earn_drinks, 4)"
     out = [
         "begin;",
         "do $import$",
@@ -231,7 +256,7 @@ def build_sql(*, email, tz, workout_name, earn_drinks, earn_per, exercises, days
             "      values (uid, wid, ts, ts + interval '1 hour') returning id into sid;",
             "    insert into set_entries (session_id, exercise_id, amount, earned_drinks, created_at)",
             "      select sid, e.id, v.amount,",
-            "        round(v.amount::numeric / e.earn_per * e.earn_drinks, 4),",
+            f"        {earned},",
             "        ts + v.ord * interval '1 second'",
             f"      from (values {values}) as v(name, amount, ord)",
             "      join import_exercises ie on ie.name = v.name",
@@ -273,6 +298,13 @@ def build_sql(*, email, tz, workout_name, earn_drinks, earn_per, exercises, days
     return "\n".join(out) + "\n"
 
 
+def parse_rate(text):
+    match = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)\s*", text)
+    if not match or Decimal(match.group(2)) <= 0:
+        raise argparse.ArgumentTypeError(f"expected DRINKS/REPS like 3/750, got {text!r}")
+    return Decimal(match.group(1)), Decimal(match.group(2))
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--email", required=True, help="Email of the Google account to import into")
@@ -282,6 +314,11 @@ def main(argv=None):
     parser.add_argument("--workout-name", default="Workout", help="Workout to import sessions into")
     parser.add_argument("--earn-drinks", type=Decimal, default=Decimal("3.6"))
     parser.add_argument("--earn-per", type=int, default=1000, help="Reps per --earn-drinks")
+    parser.add_argument(
+        "--set-rate",
+        type=parse_rate,
+        help="DRINKS/REPS (e.g. 3/750): earn imported sets at this rate instead of the exercise's",
+    )
     parser.add_argument(
         "--missing-volume-ml",
         type=int,
@@ -296,12 +333,14 @@ def main(argv=None):
         parser.error("give --workouts, --drinks or both")
     if args.earn_per <= 0 or args.earn_drinks < 0:
         parser.error("--earn-per must be positive and --earn-drinks non-negative")
+    if not 0 < args.missing_abv <= 100:
+        parser.error("--missing-abv must be in (0, 100]")
     try:
         exercises, days = parse_workouts(args.workouts) if args.workouts else ([], [])
         fallback = (
             (args.missing_abv, args.missing_volume_ml) if args.missing_volume_ml else None
         )
-        drinks = parse_drinks(args.drinks, fallback) if args.drinks else []
+        drinks = parse_drinks(args.drinks, fallback, args.missing_abv) if args.drinks else []
     except (CsvError, OSError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
@@ -322,6 +361,7 @@ def main(argv=None):
             days=days,
             drinks=drinks,
             dry_run=args.dry_run,
+            set_rate=args.set_rate,
         )
     )
     return 0

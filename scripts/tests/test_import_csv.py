@@ -29,6 +29,7 @@ class ParseDateTest(unittest.TestCase):
         self.assertEqual(import_csv.parse_date("01/02/26", "x"), date(2026, 2, 1))
         self.assertEqual(import_csv.parse_date("31/12/2026", "x"), date(2026, 12, 31))
         self.assertEqual(import_csv.parse_date("46023", "x"), date(2026, 1, 1))
+        self.assertEqual(import_csv.parse_date(" 22/02/24 12", "x"), date(2024, 2, 22))
 
     def test_rejects_garbage_and_impossible_dates(self):
         for text in ("tomorrow", "31/02/2026", "12/31/2026"):
@@ -54,6 +55,11 @@ class ParseWorkoutsTest(CsvFiles):
                 (date(2026, 1, 2), [("G - abs", 10), ("G - abs", 12)]),
             ],
         )
+
+    def test_only_exercises_with_sets_are_returned(self):
+        path = self.write("w.csv", ",Dips,Squat,0\n01/01/26,20,,20\n")
+        exercises, _ = import_csv.parse_workouts(path)
+        self.assertEqual(exercises, ["Dips"])
 
     def test_rejects_repeated_dates(self):
         path = self.write("w.csv", ",Dips\n04/03/26,20\n04/03/26,20\n")
@@ -109,6 +115,26 @@ class ParseDrinksTest(CsvFiles):
             ],
         )
 
+    def test_skips_summary_rows_and_rebuilds_missing_volumes_from_sdtd(self):
+        path = self.write(
+            "d.csv",
+            "TOTAL (SDTD),,,4.0,,COOH sdt drink (g),,14\n"
+            ",,,,,,,\n"
+            "DATE,ABV,V (CL),SDTD,SUM,AVAIL,NOTES,\n"
+            "31/12/24,0.0,0.0,0.0,4,1.6,,\n"
+            "30/12/24,5.0,47.3,1.3,4,1.6,ipa,\n"
+            "09/03/2024,,,1.0,3,-7.8,mama shelter,\n"
+            "18/10/24,1.0,0.0,3.0,2,5.2,,\n",
+        )
+        self.assertEqual(
+            import_csv.parse_drinks(path, (Decimal("40"), 50)),
+            [
+                (date(2024, 12, 30), Decimal("5.0"), 473, "ipa"),
+                (date(2024, 3, 9), Decimal("40"), 44, "mama shelter"),
+                (date(2024, 10, 18), Decimal("40"), 133, None),
+            ],
+        )
+
     def test_rejects_out_of_range_abv(self):
         path = self.write("d.csv", "DATE,ABV,V (CL)\n01/01/2026,120,33\n")
         with self.assertRaises(import_csv.CsvError):
@@ -140,6 +166,11 @@ class BuildSqlTest(unittest.TestCase):
         self.assertIn("v.abv::numeric / 100", sql)
         self.assertTrue(sql.rstrip().endswith("commit;"))
 
+    def test_set_rate_overrides_the_exercise_rate(self):
+        sql = self.sql(set_rate=(Decimal("3"), Decimal("787.5")))
+        self.assertIn("round(v.amount::numeric / 787.5 * 3, 4)", sql)
+        self.assertNotIn("e.earn_drinks, 4)", sql)
+
     def test_dry_run_rolls_back(self):
         self.assertTrue(self.sql(dry_run=True).rstrip().endswith("rollback;"))
 
@@ -148,6 +179,12 @@ class MainTest(CsvFiles):
     def test_requires_an_input_file(self):
         with self.assertRaises(SystemExit):
             import_csv.main(["--email", "a@b.c"])
+
+    def test_rejects_a_malformed_set_rate(self):
+        path = self.write("w.csv", ",Dips\n01/01/26,20\n")
+        for rate in ("3", "3/0", "x/750"):
+            with self.assertRaises(SystemExit):
+                import_csv.main(["--email", "a@b.c", "--workouts", str(path), "--set-rate", rate])
 
 
 if __name__ == "__main__":
