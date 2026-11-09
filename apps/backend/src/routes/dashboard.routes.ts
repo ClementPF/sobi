@@ -29,6 +29,7 @@ const dashboardSchema = z
       avgEarnedPerWeek: z.number(),
       sessionsPerWeek: z.number(),
       dryStreakDays: z.number().int(),
+      maxDryStreakDays: z.number().int().describe('Longest run of days without a drink, all time'),
       topDrinkingWeekday: z.number().int().min(1).max(7).nullable(),
     }),
   })

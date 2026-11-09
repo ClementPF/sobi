@@ -90,6 +90,32 @@ describe('buildDashboard', () => {
     expect(never.stats.dryStreakDays).toBe(3);
   });
 
+  it('finds the longest dry streak, including the current one', () => {
+    const gaps = buildDashboard({
+      range: '7d',
+      today,
+      signupDate: '2026-11-01',
+      days: [
+        day('2026-01-01', 1, 0),
+        day('2026-01-04', 0, 1),
+        day('2026-01-20', 0, 1),
+        day('2026-11-06', 0, 1),
+      ],
+    });
+    // First activity 01-01 to the 01-04 drink: 3 dry days; 01-04 to 01-20: 15; 01-20 to 11-06: 289.
+    expect(gaps.stats.maxDryStreakDays).toBe(289);
+    expect(gaps.stats.dryStreakDays).toBe(2);
+    const current = buildDashboard({
+      range: '7d',
+      today,
+      signupDate: '2026-01-01',
+      days: [day('2026-01-03', 0, 1), day('2026-01-05', 0, 1)],
+    });
+    expect(current.stats.maxDryStreakDays).toBe(current.stats.dryStreakDays);
+    const never = buildDashboard({ range: '7d', today, signupDate: '2026-11-06', days: [] });
+    expect(never.stats.maxDryStreakDays).toBe(3);
+  });
+
   it('finds the top drinking weekday in range', () => {
     const result = buildDashboard({
       range: '30d',

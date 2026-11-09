@@ -26,6 +26,7 @@ const dashboard: Dashboard = {
     avgEarnedPerWeek: 2,
     sessionsPerWeek: 1,
     dryStreakDays: 0,
+    maxDryStreakDays: 12,
     topDrinkingWeekday: 7,
   },
 };
@@ -52,6 +53,8 @@ describe('dashboard', () => {
     expect(screen.getByTestId('balance-chart')).toBeTruthy();
     expect(screen.getByTestId('weekly-bars')).toBeTruthy();
     expect(screen.getByText('Sun')).toBeTruthy();
+    expect(screen.getByText('max dry streak (days)')).toBeTruthy();
+    expect(screen.getByText('12')).toBeTruthy();
     expect(colorOf('balance-value')).toBe(Colors.drunk);
   });
 });

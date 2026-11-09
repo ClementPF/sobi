@@ -4,6 +4,7 @@ import {
   formatAmount,
   formatRate,
   formatSigned,
+  loggedEarnDrinks,
 } from '@/lib/conversions';
 
 describe('conversion helper', () => {
@@ -19,6 +20,18 @@ describe('conversion helper', () => {
     expect(earnedDrinks(90, 0.5, 60)).toBe(0.75);
     expect(earnedDrinks(10, 1, 3)).toBe(3.3333);
     expect(earnedDrinks(10, 1, 0)).toBe(0);
+  });
+
+  it('derives the rate a session was earned at from its stored sets', () => {
+    const sets = [
+      { amount: 24, earnedDrinks: 0.0914 },
+      { amount: 24, earnedDrinks: 0.0914 },
+      { amount: 14, earnedDrinks: 0.0533 },
+    ];
+    expect(formatRate('count', loggedEarnDrinks(sets, 1000)!, 1000)).toBe(
+      '3.81 drinks per 1000 reps',
+    );
+    expect(loggedEarnDrinks([], 1000)).toBeNull();
   });
 
   it('formats amounts, rates and signed totals', () => {

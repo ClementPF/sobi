@@ -12,20 +12,23 @@ export function isoWeekdayName(weekday: number): string {
   return WEEKDAYS[weekday - 1] ?? '';
 }
 
-/** "Mon 9 Nov" for a local YYYY-MM-DD date. */
+const DATE_FORMAT: Intl.DateTimeFormatOptions = {
+  weekday: 'short',
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+};
+
+/** "Mon 9 Nov 2026" for a local YYYY-MM-DD date. */
 export function formatDay(date: string): string {
   const [y, m, d] = date.split('-').map(Number);
   const value = new Date(y ?? 1970, (m ?? 1) - 1, d ?? 1);
-  return value.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+  return value.toLocaleDateString(undefined, DATE_FORMAT);
 }
 
-/** "Mon 9 Nov" for an ISO timestamp, in the device's time zone. */
+/** "Mon 9 Nov 2026" for an ISO timestamp, in the device's time zone. */
 export function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-  });
+  return new Date(iso).toLocaleDateString(undefined, DATE_FORMAT);
 }
 
 export function formatTime(iso: string): string {

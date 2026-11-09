@@ -105,6 +105,7 @@ export function DashboardView({
         <StatTile label="earned / week" value={formatDrinks(stats.avgEarnedPerWeek)} />
         <StatTile label="sessions / week" value={formatDrinks(stats.sessionsPerWeek)} />
         <StatTile label="dry streak (days)" value={String(stats.dryStreakDays)} />
+        <StatTile label="max dry streak (days)" value={String(stats.maxDryStreakDays)} />
         <StatTile
           label="top drinking day"
           value={

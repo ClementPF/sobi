@@ -131,6 +131,8 @@ export interface Dashboard {
     avgEarnedPerWeek: number;
     sessionsPerWeek: number;
     dryStreakDays: number;
+    /** Longest run of days without a drink, all time. */
+    maxDryStreakDays: number;
     /** ISO weekday, 1 = Monday … 7 = Sunday. */
     topDrinkingWeekday: number | null;
   };

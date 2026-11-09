@@ -34,6 +34,19 @@ export function earnedDrinks(amount: number, earnDrinks: number, earnPer: number
   return roundTo((amount / earnPer) * earnDrinks, 4);
 }
 
+/**
+ * Drinks per `earnPer` units that a session's sets actually earned. Earned drinks are stored per
+ * set at log time, so this differs from the exercise's current rate after a rate edit or import.
+ */
+export function loggedEarnDrinks(
+  sets: { amount: number; earnedDrinks: number }[],
+  earnPer: number,
+): number | null {
+  const amount = sets.reduce((sum, s) => sum + s.amount, 0);
+  if (amount <= 0) return null;
+  return (sets.reduce((sum, s) => sum + s.earnedDrinks, 0) / amount) * earnPer;
+}
+
 /** "1.25", "-0.5", "0": drinks with at most two decimals. */
 export function formatDrinks(value: number): string {
   const rounded = roundTo(value, 2);

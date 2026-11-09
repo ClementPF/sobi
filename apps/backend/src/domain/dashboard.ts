@@ -43,6 +43,8 @@ export interface Dashboard {
     avgEarnedPerWeek: number;
     sessionsPerWeek: number;
     dryStreakDays: number;
+    /** Longest run of days without a drink, counting the current streak. */
+    maxDryStreakDays: number;
     /** ISO weekday (1 = Monday … 7 = Sunday) with the most drinks in range; null if none. */
     topDrinkingWeekday: number | null;
   };
@@ -104,14 +106,21 @@ export function buildDashboard({ range, today, signupDate, days }: DashboardInpu
 
   const weeks = (daysBetween(from, today) + 1) / 7;
 
+  // Dry days before the first drink count from signup, or from earlier logged (imported) activity.
+  const start = firstDay && firstDay < signupDate ? firstDay : signupDate;
   let lastDrinkDay: string | undefined;
+  let maxDryStreakDays = 0;
   for (const d of sorted) {
     if (d.date > today) break;
-    if (d.drunk > 0) lastDrinkDay = d.date;
+    if (d.drunk <= 0) continue;
+    const gap = lastDrinkDay ? daysBetween(lastDrinkDay, d.date) - 1 : daysBetween(start, d.date);
+    maxDryStreakDays = Math.max(maxDryStreakDays, gap);
+    lastDrinkDay = d.date;
   }
   const dryStreakDays = lastDrinkDay
     ? daysBetween(lastDrinkDay, today)
-    : Math.max(daysBetween(signupDate, today) + 1, 0);
+    : Math.max(daysBetween(start, today) + 1, 0);
+  maxDryStreakDays = Math.max(maxDryStreakDays, dryStreakDays);
 
   let topDrinkingWeekday: number | null = null;
   let topAmount = 0;
@@ -145,6 +154,7 @@ export function buildDashboard({ range, today, signupDate, days }: DashboardInpu
       avgEarnedPerWeek: roundTo(rangeEarned / weeks, 2),
       sessionsPerWeek: roundTo(rangeSessions / weeks, 2),
       dryStreakDays,
+      maxDryStreakDays,
       topDrinkingWeekday,
     },
   };
