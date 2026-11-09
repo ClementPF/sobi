@@ -255,8 +255,9 @@ def build_sql(*, email, tz, workout_name, earn_drinks, earn_per, exercises, days
             "  else",
             "    insert into drinks (user_id, consumed_at, abv, volume_ml, alcohol_g, std_drinks, note)",
             "      select uid, ts + v.ord * interval '1 minute', v.abv, v.ml,",
-            "        round(v.ml * v.abv / 100 * 0.789, 2),",
-            "        round(v.ml * v.abv / 100 * 0.789 / 14, 4), v.note",
+            # Cast: a day whose ABVs are all whole numbers would otherwise use integer division.
+            "        round(v.ml * v.abv::numeric / 100 * 0.789, 2),",
+            "        round(v.ml * v.abv::numeric / 100 * 0.789 / 14, 4), v.note",
             f"      from (values {values}) as v(abv, ml, ord, note);",
             "    get diagnostics n = row_count;",
             "    new_drinks := new_drinks + n;",

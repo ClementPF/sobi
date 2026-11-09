@@ -137,6 +137,7 @@ class BuildSqlTest(unittest.TestCase):
         self.assertIn("timestamp '2026-12-31 20:00' at time zone 'America/Los_Angeles'", sql)
         self.assertIn("'count', 3.6, 1000, 0", sql)
         self.assertIn("(5, 473, 0, 'it''s late')", sql)
+        self.assertIn("v.abv::numeric / 100", sql)
         self.assertTrue(sql.rstrip().endswith("commit;"))
 
     def test_dry_run_rolls_back(self):
