@@ -1,6 +1,15 @@
 import { z } from 'zod';
 import type { containers, drinks, exercises, users, workouts } from '../db/schema.js';
 
+/** Free text; blank becomes null. */
+export const noteInputSchema = z
+  .string()
+  .trim()
+  .max(500)
+  .nullable()
+  .transform((v) => (v ? v : null))
+  .describe('Free-text note, up to 500 characters; blank clears it');
+
 export const unitsSchema = z
   .enum(['metric', 'imperial'])
   .describe('Display units; the API always stores ml and meters');
@@ -102,6 +111,7 @@ export const drinkDtoSchema = z
     containerName: z.string().nullable(),
     alcoholG: z.number(),
     stdDrinks: z.number(),
+    note: z.string().nullable(),
   })
   .meta({ id: 'Drink' });
 
@@ -120,6 +130,7 @@ export function toDrinkDto(
     containerName,
     alcoholG: row.alcoholG,
     stdDrinks: row.stdDrinks,
+    note: row.note,
   };
 }
 
@@ -144,6 +155,7 @@ export const sessionSummarySchema = z
     endedAt: z.iso.datetime().nullable(),
     setCount: z.number().int(),
     earnedDrinks: z.number(),
+    note: z.string().nullable(),
   })
   .meta({ id: 'SessionSummary' });
 

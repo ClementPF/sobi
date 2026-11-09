@@ -327,6 +327,25 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -v
 - Never sleep, also with the lid closed (keep it on power): `sudo pmset -a sleep 0 disablesleep 1`.
 - Power back on after an outage: `sudo pmset -a autorestart 1`.
 
+## Importing spreadsheet data
+
+`scripts/import_csv.py` turns a workouts CSV and a drinks CSV into SQL for one user (match by
+the Google account's email). The user must have signed in once. It needs only Python 3:
+
+```sh
+python3 scripts/import_csv.py --email you@example.com \
+  --workouts Workout26.csv --drinks COOH26.csv --dry-run \
+  | docker compose -f docker-compose.prod.yml -f docker-compose.lan.yml --env-file .env.production \
+    exec -T db psql -U sobi -d sobi -v ON_ERROR_STOP=1
+```
+
+`--dry-run` reports what would be imported and rolls back; drop it to commit. Workouts are
+imported into the workout named by `--workout-name` (default `Workout`), creating it and any
+missing exercises at `--earn-drinks` per `--earn-per` reps (default 3.6 per 1000). Sessions
+are placed at 12:00 and drinks from 20:00 in `--tz` (default `America/Los_Angeles`). Days that
+were already imported are skipped, so re-running with a longer file only adds the new days.
+Run `python3 scripts/import_csv.py --help` for the CSV formats.
+
 ## Backups
 
 All data lives in the `sobi_prod_pgdata` volume on this one machine. Dump it daily to

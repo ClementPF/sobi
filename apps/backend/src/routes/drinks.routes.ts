@@ -5,7 +5,7 @@ import { containers, drinks } from '../db/schema.js';
 import { convertDrink } from '../domain/conversions.js';
 import { ApiError, errorResponseSchema } from '../lib/errors.js';
 import { cursorQuerySchema, decodeCursor, encodeCursor } from '../lib/pagination.js';
-import { drinkDtoSchema, idParamsSchema, toDrinkDto } from '../lib/serializers.js';
+import { drinkDtoSchema, idParamsSchema, noteInputSchema, toDrinkDto } from '../lib/serializers.js';
 import { findOwnedContainer } from '../services/container.service.js';
 
 const errors = { 400: errorResponseSchema, 401: errorResponseSchema, 404: errorResponseSchema };
@@ -22,6 +22,7 @@ const drinkInputSchema = z
       .describe("Defaults to the container's volume"),
     containerId: z.uuid().optional(),
     consumedAt: z.iso.datetime({ offset: true }).optional().describe('Defaults to now'),
+    note: noteInputSchema.optional(),
   })
   .meta({ id: 'NewDrink' });
 
@@ -42,7 +43,7 @@ export const drinkRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (request, reply) => {
-      const { abv, containerId, consumedAt } = request.body;
+      const { abv, containerId, consumedAt, note } = request.body;
       const container = containerId
         ? await findOwnedContainer(app.db, request.user.id, containerId)
         : null;
@@ -58,6 +59,7 @@ export const drinkRoutes: FastifyPluginAsyncZod = async (app) => {
           volumeMl,
           containerId: container?.id ?? null,
           consumedAt: consumedAt ? new Date(consumedAt) : app.clock(),
+          note: note ?? null,
           ...convertDrink(volumeMl, abv),
         })
         .returning();
@@ -104,6 +106,34 @@ export const drinkRoutes: FastifyPluginAsyncZod = async (app) => {
             ? encodeCursor({ at: last.drink.consumedAt, id: last.drink.id })
             : null,
       };
+    },
+  );
+
+  app.patch(
+    '/drinks/:id',
+    {
+      schema: {
+        ...common,
+        summary: "Edit a drink's note",
+        params: idParamsSchema,
+        body: z.object({ note: noteInputSchema }),
+        response: { 200: drinkDtoSchema, ...errors },
+      },
+    },
+    async (request) => {
+      const [row] = await app.db
+        .update(drinks)
+        .set({ note: request.body.note })
+        .where(and(eq(drinks.id, request.params.id), eq(drinks.userId, request.user.id)))
+        .returning();
+      if (!row) throw ApiError.notFound('Drink not found', 'DRINK_NOT_FOUND');
+      const container = row.containerId
+        ? await app.db
+            .select({ name: containers.name })
+            .from(containers)
+            .where(eq(containers.id, row.containerId))
+        : [];
+      return toDrinkDto(row, container[0]?.name ?? null);
     },
   );
 

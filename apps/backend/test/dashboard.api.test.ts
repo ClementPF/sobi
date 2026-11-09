@@ -104,4 +104,53 @@ describe('dashboard and history API', () => {
     });
     expect(second.nextCursor).toBeNull();
   });
+
+  it('stores notes on sessions and drinks and shows them in history', async () => {
+    const s = await session('2026-11-07T09:00:00Z', 100);
+    const patched = await client.patch(`/sessions/${s}`, { note: '  felt strong  ' });
+    expect(patched.statusCode).toBe(200);
+    expect(patched.json().note).toBe('felt strong');
+    const drink = (
+      await client.post('/drinks', {
+        abv: 5,
+        volumeMl: 330,
+        consumedAt: '2026-11-07T20:00:00Z',
+        note: 'birthday',
+      })
+    ).json();
+    expect(drink.note).toBe('birthday');
+    const edited = await client.patch(`/drinks/${drink.id}`, { note: '' });
+    expect(edited.json().note).toBeNull();
+    await client.patch(`/drinks/${drink.id}`, { note: 'birthday party' });
+
+    const day = (await client.get('/history?tz=UTC')).json().days[0];
+    expect(day.entries.map((e: { note: string | null }) => e.note)).toEqual([
+      'birthday party',
+      'felt strong',
+    ]);
+    expect((await client.patch(`/sessions/${s}`, { note: 'x'.repeat(501) })).statusCode).toBe(400);
+  });
+
+  it('bulk-deletes only your own sessions and drinks', async () => {
+    const s = await session('2026-11-07T09:00:00Z', 100);
+    const keep = await session('2026-11-06T09:00:00Z', 100);
+    const drink = (
+      await client.post('/drinks', { abv: 5, volumeMl: 330, consumedAt: '2026-11-07T20:00:00Z' })
+    ).json();
+    const other = await signedInUser(app);
+    const theirs = (await other.client.post('/drinks', { abv: 5, volumeMl: 330 })).json();
+
+    const res = await client.post('/history/delete', {
+      sessionIds: [s],
+      drinkIds: [drink.id, theirs.id],
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ sessions: 1, drinks: 1 });
+    const days = (await client.get('/history?tz=UTC')).json().days;
+    expect(days.flatMap((d: { entries: { id: string }[] }) => d.entries.map((e) => e.id))).toEqual([
+      keep,
+    ]);
+    expect((await other.client.get('/drinks')).json().items).toHaveLength(1);
+    expect((await client.post('/history/delete', { sessionIds: ['nope'] })).statusCode).toBe(400);
+  });
 });

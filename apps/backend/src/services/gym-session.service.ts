@@ -94,6 +94,7 @@ export async function sessionDetail(
     workout: { id: row.workout.id, name: row.workout.name },
     startedAt: row.session.startedAt.toISOString(),
     endedAt: row.session.endedAt?.toISOString() ?? null,
+    note: row.session.note,
     setCount: sets.length,
     earnedDrinks: roundTo(earned, 4),
     exercises: exerciseRows.map((e) => ({
@@ -154,6 +155,7 @@ export async function listSessions(
       workout: { id: r.workout.id, name: r.workout.name },
       startedAt: r.session.startedAt.toISOString(),
       endedAt: r.session.endedAt?.toISOString() ?? null,
+      note: r.session.note,
       ...(totals.get(r.session.id) ?? { setCount: 0, earnedDrinks: 0 }),
     })),
     next: rows.length > limit && last ? { at: last.session.startedAt, id: last.session.id } : null,

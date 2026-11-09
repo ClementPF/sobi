@@ -66,6 +66,8 @@ export const listSessions = (cursor?: string) =>
   api.get<Page<SessionSummary>>('/sessions', { query: { cursor } });
 export const endSession = (id: string) => api.post<SessionDetail>(`/sessions/${seg(id)}/end`, {});
 export const deleteSession = (id: string) => api.delete<void>(`/sessions/${seg(id)}`);
+export const updateSessionNote = (id: string, note: string | null) =>
+  api.patch<SessionDetail>(`/sessions/${seg(id)}`, { note });
 export const logSet = (sessionId: string, body: { exerciseId: string; amount: number }) =>
   api.post<SetEntry>(`/sessions/${seg(sessionId)}/sets`, body);
 export const deleteSet = (id: string) => api.delete<void>(`/sets/${seg(id)}`);
@@ -83,9 +85,13 @@ export const logDrink = (body: NewDrink) => api.post<Drink>('/drinks', body);
 export const listDrinks = (cursor?: string) =>
   api.get<Page<Drink>>('/drinks', { query: { cursor } });
 export const deleteDrink = (id: string) => api.delete<void>(`/drinks/${seg(id)}`);
+export const updateDrinkNote = (id: string, note: string | null) =>
+  api.patch<Drink>(`/drinks/${seg(id)}`, { note });
 
 // Dashboard and history
 export const getDashboard = (range: DashboardRange, tz: string) =>
   api.get<Dashboard>('/dashboard', { query: { range, tz } });
 export const getHistory = (tz: string, cursor?: string) =>
   api.get<History>('/history', { query: { tz, cursor } });
+export const deleteHistoryEntries = (body: { sessionIds: string[]; drinkIds: string[] }) =>
+  api.post<{ sessions: number; drinks: number }>('/history/delete', body);

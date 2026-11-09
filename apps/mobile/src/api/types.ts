@@ -79,6 +79,7 @@ export interface SessionSummary {
   endedAt: string | null;
   setCount: number;
   earnedDrinks: number;
+  note: string | null;
 }
 
 export interface SessionDetail extends SessionSummary {
@@ -100,6 +101,7 @@ export interface Drink {
   containerName: string | null;
   alcoholG: number;
   stdDrinks: number;
+  note: string | null;
 }
 
 export interface NewDrink {
@@ -107,6 +109,7 @@ export interface NewDrink {
   volumeMl?: number;
   containerId?: string;
   consumedAt?: string;
+  note?: string | null;
 }
 
 export type DashboardRange = '7d' | '30d' | '90d' | 'all';
@@ -141,6 +144,7 @@ export interface HistorySessionEntry {
   workoutName: string;
   setCount: number;
   earnedDrinks: number;
+  note: string | null;
 }
 
 export interface HistoryDrinkEntry {
@@ -152,6 +156,7 @@ export interface HistoryDrinkEntry {
   containerName: string | null;
   alcoholG: number;
   stdDrinks: number;
+  note: string | null;
 }
 
 export type HistoryEntry = HistorySessionEntry | HistoryDrinkEntry;

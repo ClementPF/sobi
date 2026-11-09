@@ -15,6 +15,7 @@ import { useUnits } from '@/auth/session';
 import { Button } from '@/components/button';
 import { DrumPicker, rangeItems } from '@/components/drum-picker';
 import { CenteredLoading } from '@/components/list-parts';
+import { NoteField } from '@/components/note-field';
 import {
   convertDrink,
   formatDrinks,
@@ -190,6 +191,7 @@ export function DrinksScreen() {
   const [abvTenth, setAbvTenth] = useState(0);
   const [volume, setVolume] = useState<Volume | null>(null);
   const [when, setWhen] = useState<When>({ kind: 'now' });
+  const [note, setNote] = useState('');
   const [managing, setManaging] = useState(false);
   const [logged, setLogged] = useState<string | null>(null);
 
@@ -202,7 +204,7 @@ export function DrinksScreen() {
 
   const log = useMutation({
     mutationFn: () => {
-      const body: NewDrink = { abv, consumedAt: consumedAtOf(when) };
+      const body: NewDrink = { abv, consumedAt: consumedAtOf(when), note: note.trim() || null };
       if (selected?.kind === 'container') body.containerId = selected.container.id;
       else body.volumeMl = ml!;
       return logDrink(body);
@@ -210,6 +212,7 @@ export function DrinksScreen() {
     onSuccess: async (drink) => {
       setLogged(`Logged ${formatDrinks(drink.stdDrinks)} standard drinks.`);
       setWhen({ kind: 'now' });
+      setNote('');
       await invalidate();
     },
   });
@@ -330,6 +333,11 @@ export function DrinksScreen() {
             />
           </View>
         )}
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.sectionTitle}>Note</Text>
+        <NoteField value={note} onChangeText={setNote} placeholder="Optional" />
       </View>
 
       <View style={styles.card} testID="drink-preview">

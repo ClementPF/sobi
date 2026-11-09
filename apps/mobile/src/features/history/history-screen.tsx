@@ -1,18 +1,32 @@
 import { useInfiniteQuery, useMutation } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useRef, useState } from 'react';
-import { Pressable, RefreshControl, SectionList, StyleSheet, Text, View } from 'react-native';
+import {
+  Modal,
+  Pressable,
+  RefreshControl,
+  SectionList,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import Swipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 
-import { deleteDrink, deleteSession, getHistory } from '@/api/endpoints';
-import type { HistoryDay, HistoryEntry, Units } from '@/api/types';
+import { deleteHistoryEntries, getHistory, updateDrinkNote } from '@/api/endpoints';
+import type { HistoryDay, HistoryDrinkEntry, HistoryEntry, Units } from '@/api/types';
 import { useUnits } from '@/auth/session';
+import { Button } from '@/components/button';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { CenteredLoading, EmptyState } from '@/components/list-parts';
+import { NoteField } from '@/components/note-field';
 import { formatDrinks, formatSigned, formatVolume } from '@/lib/conversions';
 import { queryKeys, useInvalidateTotals } from '@/lib/queries';
 import { deviceTimeZone, formatDay, formatTime } from '@/lib/time';
 import { Colors, Palette, Spacing, Typography } from '@/theme';
+
+import { selectionLabel } from './selection';
+
+const keyOf = (entry: HistoryEntry) => `${entry.type}-${entry.id}`;
 
 function describe(
   entry: HistoryEntry,
@@ -32,9 +46,53 @@ function describe(
   };
 }
 
-function EntryRow({ entry, onDelete }: { entry: HistoryEntry; onDelete(): void }) {
+function EntryRow({
+  entry,
+  selecting,
+  selected,
+  onPress,
+  onLongPress,
+  onDelete,
+}: {
+  entry: HistoryEntry;
+  selecting: boolean;
+  selected: boolean;
+  onPress(): void;
+  onLongPress(): void;
+  onDelete(): void;
+}) {
   const ref = useRef<SwipeableMethods>(null);
   const { title, detail, amount } = describe(entry, useUnits());
+  const row = (
+    <Pressable
+      accessibilityRole={selecting ? 'checkbox' : 'button'}
+      accessibilityState={selecting ? { checked: selected } : undefined}
+      onPress={onPress}
+      onLongPress={onLongPress}
+      style={[styles.entry, selected && styles.entrySelected]}
+      testID={`history-${entry.type}-${entry.id}`}
+    >
+      {selecting && (
+        <View style={[styles.check, selected && styles.checkOn]}>
+          {selected && <Text style={styles.checkMark}>✓</Text>}
+        </View>
+      )}
+      <Text style={styles.time}>{formatTime(entry.at)}</Text>
+      <View style={styles.flex}>
+        <Text style={Typography.body}>{title}</Text>
+        <Text style={Typography.caption}>{detail}</Text>
+        {entry.note && (
+          <Text style={styles.note} numberOfLines={2}>
+            {entry.note}
+          </Text>
+        )}
+      </View>
+      <Text style={[styles.amount, { color: amount < 0 ? Colors.drunk : Colors.earned }]}>
+        {formatSigned(amount)}
+      </Text>
+    </Pressable>
+  );
+  if (selecting) return row;
   return (
     <Swipeable
       ref={ref}
@@ -54,26 +112,7 @@ function EntryRow({ entry, onDelete }: { entry: HistoryEntry; onDelete(): void }
         </Pressable>
       )}
     >
-      <Pressable
-        accessibilityRole="button"
-        onPress={() =>
-          entry.type === 'session'
-            ? router.push({ pathname: '/sessions/[id]', params: { id: entry.id } })
-            : undefined
-        }
-        onLongPress={onDelete}
-        style={styles.entry}
-        testID={`history-${entry.type}-${entry.id}`}
-      >
-        <Text style={styles.time}>{formatTime(entry.at)}</Text>
-        <View style={styles.flex}>
-          <Text style={Typography.body}>{title}</Text>
-          <Text style={Typography.caption}>{detail}</Text>
-        </View>
-        <Text style={[styles.amount, { color: amount < 0 ? Colors.drunk : Colors.earned }]}>
-          {formatSigned(amount)}
-        </Text>
-      </Pressable>
+      {row}
     </Swipeable>
   );
 }
@@ -88,23 +127,79 @@ function DayHeader({ day }: { day: HistoryDay }) {
   );
 }
 
+function DrinkNoteSheet({ drink, onClose }: { drink: HistoryDrinkEntry | null; onClose(): void }) {
+  const invalidate = useInvalidateTotals();
+  const [note, setNote] = useState<string | null>(null);
+  const save = useMutation({
+    mutationFn: () => updateDrinkNote(drink!.id, (note ?? drink!.note ?? '').trim() || null),
+    onSuccess: async () => {
+      await invalidate();
+      onClose();
+    },
+  });
+  return (
+    <Modal visible={drink !== null} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.backdrop}>
+        <View style={styles.dialog}>
+          <Text style={Typography.title}>Drink note</Text>
+          <NoteField key={drink?.id} value={drink?.note ?? null} onChangeText={setNote} />
+          {save.error && <Text style={styles.error}>{save.error.message}</Text>}
+          <View style={styles.actions}>
+            <Button
+              title="Cancel"
+              variant="secondary"
+              onPress={onClose}
+              disabled={save.isPending}
+              style={styles.flex}
+            />
+            <Button
+              title="Save"
+              loading={save.isPending}
+              onPress={() => save.mutate()}
+              style={styles.flex}
+            />
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 export function HistoryScreen() {
   const invalidate = useInvalidateTotals();
-  const [pending, setPending] = useState<HistoryEntry | null>(null);
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Map<string, HistoryEntry>>(new Map());
+  const [pending, setPending] = useState<HistoryEntry[] | null>(null);
+  const [editing, setEditing] = useState<HistoryDrinkEntry | null>(null);
   const query = useInfiniteQuery({
     queryKey: queryKeys.history,
     queryFn: ({ pageParam }) => getHistory(deviceTimeZone(), pageParam),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
+  const stopSelecting = () => {
+    setSelecting(false);
+    setSelected(new Map());
+  };
   const remove = useMutation({
-    mutationFn: (entry: HistoryEntry) =>
-      entry.type === 'session' ? deleteSession(entry.id) : deleteDrink(entry.id),
+    mutationFn: (entries: HistoryEntry[]) =>
+      deleteHistoryEntries({
+        sessionIds: entries.filter((e) => e.type === 'session').map((e) => e.id),
+        drinkIds: entries.filter((e) => e.type === 'drink').map((e) => e.id),
+      }),
     onSuccess: async () => {
       setPending(null);
+      stopSelecting();
       await invalidate();
     },
   });
+  const toggle = (entry: HistoryEntry) =>
+    setSelected((prev) => {
+      const next = new Map(prev);
+      if (next.has(keyOf(entry))) next.delete(keyOf(entry));
+      else next.set(keyOf(entry), entry);
+      return next;
+    });
 
   if (query.isPending) return <CenteredLoading />;
   if (query.isError) {
@@ -120,14 +215,61 @@ export function HistoryScreen() {
   const sections = query.data.pages.flatMap((page) =>
     page.days.map((day) => ({ day, key: day.date, data: day.entries })),
   );
+  const hasEntries = sections.some((s) => s.data.length > 0);
+  const chosen = [...selected.values()];
+  const pendingSessions = pending?.some((e) => e.type === 'session') ?? false;
 
   return (
     <View style={Palette.screen}>
+      {hasEntries && (
+        <View style={styles.toolbar}>
+          <Text style={[Typography.bodySecondary, styles.flex]}>
+            {selecting ? `${chosen.length} selected` : ''}
+          </Text>
+          {selecting && (
+            <Pressable
+              accessibilityRole="button"
+              disabled={chosen.length === 0}
+              onPress={() => setPending(chosen)}
+              hitSlop={8}
+            >
+              <Text style={[styles.toolbarDanger, chosen.length === 0 && styles.disabled]}>
+                Delete
+              </Text>
+            </Pressable>
+          )}
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => (selecting ? stopSelecting() : setSelecting(true))}
+            hitSlop={8}
+          >
+            <Text style={styles.toolbarLink}>{selecting ? 'Cancel' : 'Select'}</Text>
+          </Pressable>
+        </View>
+      )}
       <SectionList
         sections={sections}
-        keyExtractor={(entry) => `${entry.type}-${entry.id}`}
+        keyExtractor={keyOf}
+        extraData={{ selecting, selected }}
         renderSectionHeader={({ section }) => <DayHeader day={section.day} />}
-        renderItem={({ item }) => <EntryRow entry={item} onDelete={() => setPending(item)} />}
+        renderItem={({ item }) => (
+          <EntryRow
+            entry={item}
+            selecting={selecting}
+            selected={selected.has(keyOf(item))}
+            onPress={() => {
+              if (selecting) toggle(item);
+              else if (item.type === 'session')
+                router.push({ pathname: '/sessions/[id]', params: { id: item.id } });
+              else setEditing(item);
+            }}
+            onLongPress={() => {
+              if (!selecting) setSelecting(true);
+              toggle(item);
+            }}
+            onDelete={() => setPending([item])}
+          />
+        )}
         stickySectionHeadersEnabled
         contentContainerStyle={styles.list}
         onEndReached={() => {
@@ -150,23 +292,39 @@ export function HistoryScreen() {
       />
       <ConfirmDialog
         visible={pending !== null}
-        title={pending?.type === 'session' ? 'Delete session?' : 'Delete drink?'}
+        title={`Delete ${pending ? selectionLabel(pending) : ''}?`}
         message={
-          pending?.type === 'session'
-            ? 'Its sets and the drinks they earned are removed from your balance.'
+          pendingSessions
+            ? 'Sessions lose their sets and the drinks they earned. Everything is removed from your balance.'
             : 'It is removed from your balance.'
         }
         confirmTitle="Delete"
         loading={remove.isPending}
         onConfirm={() => pending && remove.mutate(pending)}
         onCancel={() => setPending(null)}
-      />
+      >
+        {remove.error && <Text style={styles.error}>{remove.error.message}</Text>}
+      </ConfirmDialog>
+      <DrinkNoteSheet drink={editing} onClose={() => setEditing(null)} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   list: { width: '100%', maxWidth: 640, alignSelf: 'center', flexGrow: 1 },
+  toolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.lg,
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+  },
+  toolbarLink: { ...Typography.body, color: Colors.accent, fontWeight: '700' },
+  toolbarDanger: { ...Typography.body, color: Colors.error, fontWeight: '700' },
+  disabled: { opacity: 0.4 },
   dayHeader: {
     userSelect: 'none',
     flexDirection: 'row',
@@ -189,7 +347,20 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
   },
+  entrySelected: { backgroundColor: Colors.surfaceRaised },
+  check: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: Colors.textMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkOn: { borderColor: Colors.accent, backgroundColor: Colors.accent },
+  checkMark: { color: Colors.background, fontWeight: '700', fontSize: 13 },
   time: { ...Typography.caption, width: 48 },
+  note: { ...Typography.caption, color: Colors.textSecondary, fontStyle: 'italic' },
   flex: { flex: 1 },
   bold: { fontWeight: '700' },
   amount: { ...Typography.body, fontWeight: '700' },
@@ -201,5 +372,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
   },
   deleteText: { ...Typography.body, fontWeight: '700' },
+  error: { ...Typography.body, color: Colors.error },
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    padding: Spacing.lg,
+  },
+  dialog: { ...Palette.card, gap: Spacing.md, width: '100%', maxWidth: 520, alignSelf: 'center' },
+  actions: { flexDirection: 'row', gap: Spacing.sm },
   footer: { height: Spacing.xl },
 });

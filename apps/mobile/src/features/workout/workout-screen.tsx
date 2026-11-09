@@ -10,12 +10,14 @@ import {
   listWorkouts,
   logSet,
   startSession,
+  updateSessionNote,
 } from '@/api/endpoints';
 import type { Exercise, SessionDetail, SetEntry, Workout } from '@/api/types';
 import { useUnits } from '@/auth/session';
 import { Button } from '@/components/button';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { CenteredLoading, EmptyState } from '@/components/list-parts';
+import { NoteField } from '@/components/note-field';
 import { formatAmount, formatDrinks, formatRate } from '@/lib/conversions';
 import { queryKeys, useInvalidateTotals } from '@/lib/queries';
 import { Colors, Palette, Radius, Spacing, Typography } from '@/theme';
@@ -161,6 +163,13 @@ function ActiveSession({ session }: { session: SessionDetail }) {
       await refresh();
     },
   });
+  const saveNote = useMutation({
+    mutationFn: (note: string | null) => updateSessionNote(session.id, note),
+    onSuccess: async (updated) => {
+      client.setQueryData(queryKeys.activeSession, updated);
+      await refresh();
+    },
+  });
   const end = useMutation({
     mutationFn: () => endSession(session.id),
     onSuccess: async () => {
@@ -190,7 +199,13 @@ function ActiveSession({ session }: { session: SessionDetail }) {
             onRemoveSet={setRemoving}
           />
         ))}
-        <ErrorText error={log.error ?? remove.error ?? end.error} />
+        <NoteField
+          value={session.note}
+          onSave={(note) => saveNote.mutate(note)}
+          saving={saveNote.isPending}
+          placeholder="Session note"
+        />
+        <ErrorText error={log.error ?? remove.error ?? end.error ?? saveNote.error} />
         <Button title="End session" onPress={() => setConfirmEnd(true)} />
       </ScrollView>
       <SetSheet

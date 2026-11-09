@@ -3,11 +3,12 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { deleteSession, getSession } from '@/api/endpoints';
+import { deleteSession, getSession, updateSessionNote } from '@/api/endpoints';
 import { useUnits } from '@/auth/session';
 import { Button } from '@/components/button';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { CenteredLoading, EmptyState } from '@/components/list-parts';
+import { NoteField } from '@/components/note-field';
 import { formatAmount, formatDrinks, formatRate } from '@/lib/conversions';
 import { queryKeys, useInvalidateTotals } from '@/lib/queries';
 import { formatDate, formatTime } from '@/lib/time';
@@ -28,6 +29,11 @@ export function SessionDetailScreen({ id }: { id: string }) {
     },
   });
 
+  const saveNote = useMutation({
+    mutationFn: (note: string | null) => updateSessionNote(id, note),
+    onSuccess: invalidate,
+  });
+
   if (query.isPending) return <CenteredLoading />;
   if (query.isError) return <EmptyState title="Session not found." />;
   const session = query.data;
@@ -41,6 +47,13 @@ export function SessionDetailScreen({ id }: { id: string }) {
         {session.endedAt ? ` – ${formatTime(session.endedAt)}` : ' · in progress'}
       </Text>
       <Text style={styles.total}>+{formatDrinks(session.earnedDrinks)} drinks earned</Text>
+      <NoteField
+        value={session.note}
+        onSave={(note) => saveNote.mutate(note)}
+        saving={saveNote.isPending}
+        placeholder="Session note"
+      />
+      {saveNote.error && <Text style={styles.error}>{saveNote.error.message}</Text>}
       {session.exercises
         .filter((e) => e.sets.length > 0)
         .map((exercise) => (
@@ -86,4 +99,5 @@ const styles = StyleSheet.create({
   bold: { fontWeight: '700' },
   line: { flexDirection: 'row', justifyContent: 'space-between' },
   earned: { ...Typography.body, color: Colors.earned },
+  error: { ...Typography.body, color: Colors.error },
 });

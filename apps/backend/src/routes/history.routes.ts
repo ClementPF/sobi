@@ -16,6 +16,7 @@ const sessionEntry = z.object({
   workoutName: z.string(),
   setCount: z.number().int(),
   earnedDrinks: z.number(),
+  note: z.string().nullable(),
 });
 
 const drinkEntry = z.object({
@@ -27,6 +28,7 @@ const drinkEntry = z.object({
   containerName: z.string().nullable(),
   alcoholG: z.number(),
   stdDrinks: z.number(),
+  note: z.string().nullable(),
 });
 
 const historySchema = z
@@ -118,6 +120,7 @@ export const historyRoutes: FastifyPluginAsyncZod = async (app) => {
           at: r.session.startedAt.toISOString(),
           endedAt: r.session.endedAt?.toISOString() ?? null,
           workoutName: r.workoutName,
+          note: r.session.note,
           ...t,
         });
       }
@@ -134,6 +137,7 @@ export const historyRoutes: FastifyPluginAsyncZod = async (app) => {
           containerName: r.containerName,
           alcoholG: r.drink.alcoholG,
           stdDrinks: r.drink.stdDrinks,
+          note: r.drink.note,
         });
       }
 
@@ -146,6 +150,47 @@ export const historyRoutes: FastifyPluginAsyncZod = async (app) => {
         })),
         nextCursor: allDays.length > limit ? (days[days.length - 1] ?? null) : null,
       };
+    },
+  );
+
+  app.post(
+    '/history/delete',
+    {
+      onRequest: [app.authenticate],
+      schema: {
+        tags: ['history'],
+        summary: 'Delete several sessions and drinks at once',
+        description: 'Ids that are not yours or no longer exist are ignored.',
+        security: [{ bearerAuth: [] }],
+        body: z.object({
+          sessionIds: z.array(z.uuid()).max(500).default([]),
+          drinkIds: z.array(z.uuid()).max(500).default([]),
+        }),
+        response: {
+          200: z.object({ sessions: z.number().int(), drinks: z.number().int() }),
+          400: errorResponseSchema,
+          401: errorResponseSchema,
+        },
+      },
+    },
+    async (request) => {
+      const userId = request.user.id;
+      const { sessionIds, drinkIds } = request.body;
+      return app.db.transaction(async (tx) => {
+        const deletedSessions = sessionIds.length
+          ? await tx
+              .delete(sessions)
+              .where(and(eq(sessions.userId, userId), inArray(sessions.id, sessionIds)))
+              .returning({ id: sessions.id })
+          : [];
+        const deletedDrinks = drinkIds.length
+          ? await tx
+              .delete(drinks)
+              .where(and(eq(drinks.userId, userId), inArray(drinks.id, drinkIds)))
+              .returning({ id: drinks.id })
+          : [];
+        return { sessions: deletedSessions.length, drinks: deletedDrinks.length };
+      });
     },
   );
 };

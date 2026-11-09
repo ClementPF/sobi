@@ -101,6 +101,7 @@ export const sessions = pgTable(
       .references(() => workouts.id, { onDelete: 'cascade' }),
     startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
     endedAt: timestamp('ended_at', { withTimezone: true }),
+    note: text('note'),
   },
   (t) => [
     index('sessions_user_started_idx').on(t.userId, t.startedAt),
@@ -162,6 +163,7 @@ export const drinks = pgTable(
     /** Both copied at log time from the conversion formula. */
     alcoholG: numeric('alcohol_g', { precision: 10, scale: 2, mode: 'number' }).notNull(),
     stdDrinks: numeric('std_drinks', { precision: 10, scale: 4, mode: 'number' }).notNull(),
+    note: text('note'),
     createdAt: createdAt(),
   },
   (t) => [

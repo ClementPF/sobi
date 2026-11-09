@@ -7,6 +7,7 @@ import { ApiError, errorResponseSchema } from '../lib/errors.js';
 import { cursorQuerySchema, decodeCursor, encodeCursor } from '../lib/pagination.js';
 import {
   idParamsSchema,
+  noteInputSchema,
   sessionDetailSchema,
   sessionSummarySchema,
   setDtoSchema,
@@ -124,6 +125,28 @@ export const sessionRoutes: FastifyPluginAsyncZod = async (app) => {
         row.session = ended!;
       }
       return sessionDetail(app.db, row);
+    },
+  );
+
+  app.patch(
+    '/sessions/:id',
+    {
+      schema: {
+        ...common,
+        summary: "Edit a session's note",
+        params: idParamsSchema,
+        body: z.object({ note: noteInputSchema }),
+        response: { 200: sessionDetailSchema, ...errors },
+      },
+    },
+    async (request) => {
+      const row = await findOwnedSession(app.db, request.user.id, request.params.id);
+      const [updated] = await app.db
+        .update(sessions)
+        .set({ note: request.body.note })
+        .where(eq(sessions.id, row.session.id))
+        .returning();
+      return sessionDetail(app.db, { ...row, session: updated! });
     },
   );
 
