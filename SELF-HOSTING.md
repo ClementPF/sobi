@@ -344,7 +344,9 @@ imported into the workout named by `--workout-name` (default `Workout`), creatin
 missing exercises at `--earn-drinks` per `--earn-per` reps (default 3.6 per 1000). Sessions
 are placed at 12:00 and drinks from 20:00 in `--tz` (default `America/Los_Angeles`). Days that
 were already imported are skipped, so re-running with a longer file only adds the new days.
-Run `python3 scripts/import_csv.py --help` for the CSV formats.
+Drink rows without a usable volume stop the import unless you pass `--missing-volume-ml`
+(with `--missing-abv`, default 40). Run `python3 scripts/import_csv.py --help` for the CSV
+formats.
 
 ## Backups
 
