@@ -91,6 +91,28 @@ export function formatAmount(metric: Metric, amount: number, units: Units = 'met
   return String(amount);
 }
 
+export const KG_PER_LB = 0.45359237;
+
+export function weightUnit(units: Units = 'metric'): string {
+  return units === 'imperial' ? 'lb' : 'kg';
+}
+
+/** "22.5 kg" or "50 lb". */
+export function formatWeight(kg: number, units: Units = 'metric'): string {
+  const value = units === 'imperial' ? roundTo(kg / KG_PER_LB, 1) : roundTo(kg, 2);
+  return `${value} ${weightUnit(units)}`;
+}
+
+/** A set for display: "12", "12 × 40 kg" or "1:30 × 20 kg". */
+export function formatSet(
+  metric: Metric,
+  set: { amount: number; weightKg: number | null },
+  units: Units = 'metric',
+): string {
+  const amount = formatAmount(metric, set.amount, units);
+  return set.weightKg ? `${amount} × ${formatWeight(set.weightKg, units)}` : amount;
+}
+
 /** The rate's unit count as shown to the user: meters become miles in imperial. */
 export function displayEarnPer(metric: Metric, earnPer: number, units: Units = 'metric'): number {
   return metric === 'meters' && units === 'imperial'

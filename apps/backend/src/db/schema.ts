@@ -122,13 +122,17 @@ export const setEntries = pgTable(
       .notNull()
       .references(() => exercises.id, { onDelete: 'cascade' }),
     amount: integer('amount').notNull(),
+    /** Load lifted or carried, always in kg; null for bodyweight sets. */
+    weightKg: numeric('weight_kg', { precision: 7, scale: 3, mode: 'number' }),
     /** Copied at log time so later rate changes never rewrite history. */
     earnedDrinks: numeric('earned_drinks', { precision: 12, scale: 4, mode: 'number' }).notNull(),
     createdAt: createdAt(),
   },
   (t) => [
     index('set_entries_session_idx').on(t.sessionId),
+    index('set_entries_exercise_created_idx').on(t.exerciseId, t.createdAt),
     check('set_entries_amount_positive', sql`${t.amount} > 0`),
+    check('set_entries_weight_positive', sql`${t.weightKg} is null or ${t.weightKg} > 0`),
   ],
 );
 

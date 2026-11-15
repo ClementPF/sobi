@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, inArray, isNull, or, sql, sum } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull, lte, ne, or, sql, sum } from 'drizzle-orm';
 import type { Database } from '../db/client.js';
 import { exercises, sessions, setEntries, workouts } from '../db/schema.js';
 import { roundTo } from '../domain/conversions.js';
@@ -23,6 +23,7 @@ export function toSetDto(row: SetRow): SetDto {
     sessionId: row.sessionId,
     exerciseId: row.exerciseId,
     amount: row.amount,
+    weightKg: row.weightKg,
     earnedDrinks: row.earnedDrinks,
     createdAt: row.createdAt.toISOString(),
   };
@@ -88,6 +89,11 @@ export async function sessionDetail(
       ),
     )
     .orderBy(asc(exercises.sortOrder), asc(exercises.createdAt));
+  const previous = await previousSets(
+    db,
+    row.session,
+    exerciseRows.map((e) => e.id),
+  );
   const earned = sets.reduce((acc, s) => acc + s.earnedDrinks, 0);
   return {
     id: row.session.id,
@@ -100,8 +106,42 @@ export async function sessionDetail(
     exercises: exerciseRows.map((e) => ({
       ...toExerciseDto(e),
       sets: sets.filter((s) => s.exerciseId === e.id).map(toSetDto),
+      previousSet: previous.get(e.id) ?? null,
     })),
   };
+}
+
+/**
+ * The last set of each exercise logged in an earlier session, so the set picker can start where
+ * the user left off.
+ */
+async function previousSets(db: Database, session: SessionRow, exerciseIds: string[]) {
+  const previous = new Map<string, { amount: number; weightKg: number | null }>();
+  if (exerciseIds.length === 0) return previous;
+  const rows = await db
+    .selectDistinctOn([setEntries.exerciseId], {
+      exerciseId: setEntries.exerciseId,
+      amount: setEntries.amount,
+      weightKg: setEntries.weightKg,
+    })
+    .from(setEntries)
+    .innerJoin(sessions, eq(sessions.id, setEntries.sessionId))
+    .where(
+      and(
+        inArray(setEntries.exerciseId, exerciseIds),
+        eq(sessions.userId, session.userId),
+        ne(sessions.id, session.id),
+        lte(sessions.startedAt, session.startedAt),
+      ),
+    )
+    .orderBy(
+      setEntries.exerciseId,
+      desc(sessions.startedAt),
+      desc(setEntries.createdAt),
+      desc(setEntries.id),
+    );
+  for (const r of rows) previous.set(r.exerciseId, { amount: r.amount, weightKg: r.weightKg });
+  return previous;
 }
 
 /** Set count and earned total per session id. */

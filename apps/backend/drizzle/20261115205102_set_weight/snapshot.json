@@ -1,0 +1,128 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "920fd18a-91b2-45e8-8345-49e8f96ca101",
+  "prevIds": [
+    "ca268b8e-bce8-48da-89db-e0c2c1208168"
+  ],
+  "footprints": [
+    {
+      "statementType": "add_column",
+      "statementTarget": [
+        "column",
+        "public",
+        "set_entries",
+        "weight_kg"
+      ],
+      "writes": [
+        "s|col|public.set_entries.weight_kg",
+        "n|col|public.set_entries.weight_kg",
+        "e|col|public.set_entries.weight_kg"
+      ],
+      "reads": [
+        "n|tbl|public.set_entries",
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "set_entries",
+        "set_entries_exercise_created_idx"
+      ],
+      "writes": [
+        "s|idx|public.set_entries_exercise_created_idx",
+        "n|idx|public.set_entries_exercise_created_idx",
+        "e|idx|public.set_entries_exercise_created_idx",
+        "n|rel|public.set_entries_exercise_created_idx"
+      ],
+      "reads": [
+        "n|tbl|public.set_entries",
+        "n|sch|public",
+        "n|col|public.set_entries.exercise_id",
+        "n|col|public.set_entries.created_at"
+      ]
+    },
+    {
+      "statementType": "add_check",
+      "statementTarget": [
+        "table",
+        "public",
+        "set_entries"
+      ],
+      "writes": [
+        "s|ck|public.set_entries.set_entries_weight_positive",
+        "n|ck|public.set_entries.set_entries_weight_positive",
+        "e|ck|public.set_entries.set_entries_weight_positive",
+        "n|con|public.set_entries.set_entries_weight_positive"
+      ],
+      "reads": [
+        "n|tbl|public.set_entries",
+        "n|sch|public",
+        "n|col|public.set_entries.weight_kg"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "set_entries",
+        "name": "weight_kg",
+        "type": "numeric(7,3)",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "set_entries",
+        "name": "set_entries_exercise_created_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "exercise_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "created_at",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "set_entries",
+        "name": "set_entries_weight_positive",
+        "value": "\"weight_kg\" is null or \"weight_kg\" > 0",
+        "entityType": "checks"
+      }
+    }
+  ]
+}

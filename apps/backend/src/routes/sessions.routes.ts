@@ -2,7 +2,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import type { FastifyPluginAsyncZod } from '@fastify/type-provider-zod';
 import { exercises, sessions, setEntries } from '../db/schema.js';
-import { earnedDrinks } from '../domain/conversions.js';
+import { earnedDrinks, roundTo } from '../domain/conversions.js';
 import { ApiError, errorResponseSchema } from '../lib/errors.js';
 import { cursorQuerySchema, decodeCursor, encodeCursor } from '../lib/pagination.js';
 import {
@@ -179,6 +179,13 @@ export const sessionRoutes: FastifyPluginAsyncZod = async (app) => {
         body: z.object({
           exerciseId: z.uuid(),
           amount: z.number().int().min(1).max(1_000_000),
+          weightKg: z
+            .number()
+            .positive()
+            .max(1000)
+            .nullable()
+            .default(null)
+            .describe('Load in kg; omit or null for bodyweight'),
         }),
         response: { 201: setDtoSchema, ...errors, 409: errorResponseSchema },
       },
@@ -209,6 +216,7 @@ export const sessionRoutes: FastifyPluginAsyncZod = async (app) => {
           sessionId: session.id,
           exerciseId: exercise.id,
           amount: request.body.amount,
+          weightKg: request.body.weightKg === null ? null : roundTo(request.body.weightKg, 3),
           earnedDrinks: earnedDrinks(request.body.amount, exercise.earnDrinks, exercise.earnPer),
           createdAt: app.clock(),
         })

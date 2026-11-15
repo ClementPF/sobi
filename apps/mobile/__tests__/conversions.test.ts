@@ -3,7 +3,9 @@ import {
   earnedDrinks,
   formatAmount,
   formatRate,
+  formatSet,
   formatSigned,
+  formatWeight,
   loggedEarnDrinks,
 } from '@/lib/conversions';
 
@@ -41,5 +43,15 @@ describe('conversion helper', () => {
     expect(formatRate('count', 1, 100)).toBe('1 drink per 100 reps');
     expect(formatSigned(1.234)).toBe('+1.23');
     expect(formatSigned(-0.5)).toBe('−0.5');
+  });
+});
+
+describe('set weights', () => {
+  it('formats weighted and bodyweight sets', () => {
+    expect(formatWeight(22.5)).toBe('22.5 kg');
+    expect(formatWeight(20.412, 'imperial')).toBe('45 lb');
+    expect(formatSet('count', { amount: 12, weightKg: 40 })).toBe('12 × 40 kg');
+    expect(formatSet('count', { amount: 12, weightKg: null })).toBe('12');
+    expect(formatSet('seconds', { amount: 90, weightKg: 20 })).toBe('1:30 × 20 kg');
   });
 });

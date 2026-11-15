@@ -5,6 +5,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import {
   deleteSet,
+  duplicateWorkout,
   endSession,
   getActiveSession,
   listWorkouts,
@@ -12,13 +13,13 @@ import {
   startSession,
   updateSessionNote,
 } from '@/api/endpoints';
-import type { Exercise, SessionDetail, SetEntry, Workout } from '@/api/types';
+import type { Exercise, SessionDetail, SetEntry, SetValues, Workout } from '@/api/types';
 import { useUnits } from '@/auth/session';
 import { Button } from '@/components/button';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { CenteredLoading, EmptyState } from '@/components/list-parts';
 import { NoteField } from '@/components/note-field';
-import { formatAmount, formatDrinks, formatRate } from '@/lib/conversions';
+import { formatDrinks, formatRate, formatSet } from '@/lib/conversions';
 import { queryKeys, useInvalidateTotals } from '@/lib/queries';
 import { Colors, Palette, Radius, Spacing, Typography } from '@/theme';
 
@@ -44,6 +45,14 @@ function WorkoutPicker({ workouts }: { workouts: Workout[] }) {
     mutationFn: startSession,
     onSuccess: (session) => client.setQueryData(queryKeys.activeSession, session),
   });
+  const duplicate = useMutation({
+    mutationFn: duplicateWorkout,
+    onSuccess: async (copy) => {
+      await client.invalidateQueries({ queryKey: queryKeys.workouts });
+      // Open the copy so it can be renamed and adjusted straight away.
+      router.push({ pathname: '/workouts/[id]', params: { id: copy.id } });
+    },
+  });
 
   return (
     <ScrollView style={Palette.screen} contentContainerStyle={styles.container}>
@@ -57,6 +66,19 @@ function WorkoutPicker({ workouts }: { workouts: Workout[] }) {
         <View key={workout.id} style={styles.card}>
           <View style={styles.row}>
             <Text style={[Typography.body, styles.bold, styles.flex]}>{workout.name}</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Duplicate ${workout.name}`}
+              disabled={duplicate.isPending}
+              onPress={() => duplicate.mutate(workout.id)}
+              hitSlop={8}
+            >
+              <Text style={[styles.link, duplicate.isPending && styles.muted]}>
+                {duplicate.isPending && duplicate.variables === workout.id
+                  ? 'Duplicating…'
+                  : 'Duplicate'}
+              </Text>
+            </Pressable>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={`Edit ${workout.name}`}
@@ -81,7 +103,7 @@ function WorkoutPicker({ workouts }: { workouts: Workout[] }) {
           />
         </View>
       ))}
-      <ErrorText error={start.error} />
+      <ErrorText error={start.error ?? duplicate.error} />
       <Button
         title="New workout"
         variant="secondary"
@@ -116,11 +138,11 @@ function ExerciseCard({
           <Pressable
             key={set.id}
             accessibilityRole="button"
-            accessibilityLabel={`Remove set ${formatAmount(exercise.metric, set.amount, units)}`}
+            accessibilityLabel={`Remove set ${formatSet(exercise.metric, set, units)}`}
             onPress={() => onRemoveSet(set)}
             style={styles.chip}
           >
-            <Text style={Typography.body}>{formatAmount(exercise.metric, set.amount, units)}</Text>
+            <Text style={Typography.body}>{formatSet(exercise.metric, set, units)}</Text>
           </Pressable>
         ))}
         {!exercise.archived && (
@@ -150,7 +172,7 @@ function ActiveSession({ session }: { session: SessionDetail }) {
   };
 
   const log = useMutation({
-    mutationFn: (amount: number) => logSet(session.id, { exerciseId: sheetFor!.id, amount }),
+    mutationFn: (values: SetValues) => logSet(session.id, { exerciseId: sheetFor!.id, ...values }),
     onSuccess: async () => {
       setSheetFor(null);
       await refresh();
@@ -179,8 +201,12 @@ function ActiveSession({ session }: { session: SessionDetail }) {
     },
   });
 
-  const lastAmount = (exercise: Exercise) =>
-    session.exercises.find((e) => e.id === exercise.id)?.sets.at(-1)?.amount;
+  /** This session's last set of the exercise, else the last one from an earlier session. */
+  const lastSet = (exercise: Exercise): SetValues | null => {
+    const current = session.exercises.find((e) => e.id === exercise.id);
+    const set = current?.sets.at(-1);
+    return set ? { amount: set.amount, weightKg: set.weightKg } : (current?.previousSet ?? null);
+  };
 
   return (
     <View style={Palette.screen}>
@@ -210,9 +236,9 @@ function ActiveSession({ session }: { session: SessionDetail }) {
       </ScrollView>
       <SetSheet
         exercise={sheetFor}
-        lastAmount={sheetFor ? lastAmount(sheetFor) : undefined}
+        last={sheetFor ? lastSet(sheetFor) : null}
         saving={log.isPending}
-        onLog={(amount) => log.mutate(amount)}
+        onLog={(values) => log.mutate(values)}
         onClose={() => setSheetFor(null)}
       />
       <ConfirmDialog
@@ -284,6 +310,7 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   bold: { fontWeight: '700' },
   link: { ...Typography.body, color: Colors.accent, fontWeight: '700' },
+  muted: { opacity: 0.5 },
   earned: { ...Typography.body, color: Colors.earned, fontWeight: '700' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
   chip: {
