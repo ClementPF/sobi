@@ -9,7 +9,7 @@ import { Button } from '@/components/button';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { CenteredLoading, EmptyState } from '@/components/list-parts';
 import { NoteField } from '@/components/note-field';
-import { formatAmount, formatDrinks, formatRate, loggedEarnDrinks } from '@/lib/conversions';
+import { formatDrinks, formatRate, formatSet, loggedEarnDrinks } from '@/lib/conversions';
 import { queryKeys, useInvalidateTotals } from '@/lib/queries';
 import { formatDate, formatTime } from '@/lib/time';
 import { Colors, Palette, Spacing, Typography } from '@/theme';
@@ -69,9 +69,7 @@ export function SessionDetailScreen({ id }: { id: string }) {
             </Text>
             {exercise.sets.map((set) => (
               <View key={set.id} style={styles.line}>
-                <Text style={Typography.body}>
-                  {formatAmount(exercise.metric, set.amount, units)}
-                </Text>
+                <Text style={Typography.body}>{formatSet(exercise.metric, set, units)}</Text>
                 <Text style={styles.earned}>+{formatDrinks(set.earnedDrinks)}</Text>
               </View>
             ))}

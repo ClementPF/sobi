@@ -140,6 +140,7 @@ export const setDtoSchema = z
     sessionId: z.uuid(),
     exerciseId: z.uuid(),
     amount: z.number().int(),
+    weightKg: z.number().nullable().describe('Load in kg; null for bodyweight sets'),
     earnedDrinks: z.number(),
     createdAt: z.iso.datetime(),
   })
@@ -166,6 +167,10 @@ export const sessionDetailSchema = sessionSummarySchema
     exercises: z.array(
       exerciseDtoSchema.extend({
         sets: z.array(setDtoSchema),
+        previousSet: z
+          .object({ amount: z.number().int(), weightKg: z.number().nullable() })
+          .nullable()
+          .describe('The last set of this exercise logged in an earlier session'),
       }),
     ),
   })

@@ -81,6 +81,24 @@ export async function createWorkout(
   });
 }
 
+/** A new workout with the same name (suffixed "copy") and active exercises as `source`. */
+export async function duplicateWorkout(
+  db: Database,
+  userId: string,
+  source: WorkoutRow,
+): Promise<WorkoutDto> {
+  const sourceExercises = await activeExercises(db, [source.id]);
+  return createWorkout(db, userId, {
+    name: `${source.name} (copy)`.slice(0, 100),
+    exercises: sourceExercises.map(({ name, metric, earnDrinks, earnPer }) => ({
+      name,
+      metric,
+      earnDrinks,
+      earnPer,
+    })),
+  });
+}
+
 export async function addExercise(
   db: Database,
   workoutId: string,

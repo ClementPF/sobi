@@ -14,6 +14,7 @@ import {
   activeExercises,
   addExercise,
   createWorkout,
+  duplicateWorkout,
   findOwnedWorkout,
   findWorkoutExercise,
   listWorkouts,
@@ -128,6 +129,23 @@ export const workoutRoutes: FastifyPluginAsyncZod = async (app) => {
         .set({ archivedAt: app.clock() })
         .where(eq(workouts.id, workout.id));
       return reply.code(204).send(null);
+    },
+  );
+
+  app.post(
+    '/workouts/:id/duplicate',
+    {
+      schema: {
+        ...common,
+        summary: 'Duplicate a workout',
+        description: 'Copies the name (with " (copy)") and the active exercises with their rates.',
+        params: idParamsSchema,
+        response: { 201: workoutDtoSchema, ...errors },
+      },
+    },
+    async (request, reply) => {
+      const workout = await findOwnedWorkout(app.db, request.user.id, request.params.id);
+      return reply.code(201).send(await duplicateWorkout(app.db, request.user.id, workout));
     },
   );
 

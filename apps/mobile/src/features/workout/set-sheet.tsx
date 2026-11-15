@@ -1,11 +1,19 @@
 import { useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import type { Exercise, Metric, Units } from '@/api/types';
+import type { Exercise, Metric, SetValues, Units } from '@/api/types';
 import { useUnits } from '@/auth/session';
 import { Button } from '@/components/button';
 import { DrumPicker, rangeItems, type DrumItem } from '@/components/drum-picker';
-import { earnedDrinks, formatAmount, formatDrinks, METERS_PER_MILE } from '@/lib/conversions';
+import {
+  earnedDrinks,
+  formatSet,
+  formatDrinks,
+  KG_PER_LB,
+  METERS_PER_MILE,
+  roundTo,
+  weightUnit,
+} from '@/lib/conversions';
 import { Colors, Palette, Spacing, Typography } from '@/theme';
 
 interface DrumSpec {
@@ -60,18 +68,47 @@ export function composeAmount(metric: Metric, parts: number[], units: Units = 'm
   return a;
 }
 
+/**
+ * The weight drum counts in steps (0.5 kg or 2.5 lb) so its values stay integers; step 0 is a
+ * bodyweight set.
+ */
+const WEIGHT_STEP: Record<Units, number> = { metric: 0.5, imperial: 2.5 };
+const WEIGHT_MAX_STEPS: Record<Units, number> = { metric: 600, imperial: 280 };
+
+function weightDrum(units: Units): DrumSpec {
+  const step = WEIGHT_STEP[units];
+  return {
+    label: weightUnit(units),
+    items: rangeItems(0, WEIGHT_MAX_STEPS[units], 1, (v) => (v === 0 ? '—' : String(v * step))),
+  };
+}
+
+/** Weight drum position for a weight in kg (null: bodyweight). */
+export function weightToStep(weightKg: number | null, units: Units = 'metric'): number {
+  if (!weightKg || weightKg <= 0) return 0;
+  const value = units === 'imperial' ? weightKg / KG_PER_LB : weightKg;
+  return Math.min(Math.max(Math.round(value / WEIGHT_STEP[units]), 0), WEIGHT_MAX_STEPS[units]);
+}
+
+/** The weight in kg the API stores for a weight drum position; null for bodyweight. */
+export function stepToWeight(step: number, units: Units = 'metric'): number | null {
+  if (step <= 0) return null;
+  const value = step * WEIGHT_STEP[units];
+  return roundTo(units === 'imperial' ? value * KG_PER_LB : value, 3);
+}
+
 const DEFAULT_AMOUNT: Record<Metric, number> = { count: 10, seconds: 60, meters: 1000 };
 
 export interface SetSheetProps {
   exercise: Exercise | null;
-  /** The last amount logged for this exercise, used as the starting position. */
-  lastAmount?: number;
+  /** The last set logged for this exercise, used as the starting position. */
+  last?: SetValues | null;
   saving: boolean;
-  onLog(amount: number): void;
+  onLog(values: SetValues): void;
   onClose(): void;
 }
 
-export function SetSheet({ exercise, lastAmount, saving, onLog, onClose }: SetSheetProps) {
+export function SetSheet({ exercise, last, saving, onLog, onClose }: SetSheetProps) {
   return (
     <Modal visible={exercise !== null} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="Close" />
@@ -79,7 +116,7 @@ export function SetSheet({ exercise, lastAmount, saving, onLog, onClose }: SetSh
         <SetSheetBody
           key={exercise.id}
           exercise={exercise}
-          initial={lastAmount ?? DEFAULT_AMOUNT[exercise.metric]}
+          initial={last ?? { amount: DEFAULT_AMOUNT[exercise.metric], weightKg: null }}
           saving={saving}
           onLog={onLog}
           onClose={onClose}
@@ -97,15 +134,18 @@ function SetSheetBody({
   onClose,
 }: {
   exercise: Exercise;
-  initial: number;
+  initial: SetValues;
   saving: boolean;
-  onLog(amount: number): void;
+  onLog(values: SetValues): void;
   onClose(): void;
 }) {
   const units = useUnits();
-  const [parts, setParts] = useState(() => splitAmount(exercise.metric, initial, units));
+  const [parts, setParts] = useState(() => splitAmount(exercise.metric, initial.amount, units));
+  const [weightStep, setWeightStep] = useState(() => weightToStep(initial.weightKg, units));
   const amount = composeAmount(exercise.metric, parts, units);
+  const weightKg = stepToWeight(weightStep, units);
   const earned = earnedDrinks(amount, exercise.earnDrinks, exercise.earnPer);
+  const weight = weightDrum(units);
 
   return (
     <View style={styles.sheet} testID="set-sheet">
@@ -120,9 +160,15 @@ function SetSheetBody({
             onChange={(v) => setParts((prev) => prev.map((p, j) => (j === i ? v : p)))}
           />
         ))}
+        <DrumPicker
+          label={weight.label}
+          items={weight.items}
+          value={weightStep}
+          onChange={setWeightStep}
+        />
       </View>
       <Text style={styles.preview}>
-        {formatAmount(exercise.metric, amount, units)} → +{formatDrinks(earned)} drinks
+        {formatSet(exercise.metric, { amount, weightKg }, units)} → +{formatDrinks(earned)} drinks
       </Text>
       <View style={styles.actions}>
         <Button title="Cancel" variant="secondary" onPress={onClose} style={styles.flex} />
@@ -130,7 +176,7 @@ function SetSheetBody({
           title="Log set"
           loading={saving}
           disabled={amount < 1}
-          onPress={() => onLog(amount)}
+          onPress={() => onLog({ amount, weightKg })}
           style={styles.flex}
         />
       </View>

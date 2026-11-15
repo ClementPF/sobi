@@ -68,8 +68,16 @@ export interface SetEntry {
   sessionId: string;
   exerciseId: string;
   amount: number;
+  /** Load in kg; null for bodyweight sets. */
+  weightKg: number | null;
   earnedDrinks: number;
   createdAt: string;
+}
+
+/** What a set was logged with: the starting point for the next one. */
+export interface SetValues {
+  amount: number;
+  weightKg: number | null;
 }
 
 export interface SessionSummary {
@@ -83,7 +91,11 @@ export interface SessionSummary {
 }
 
 export interface SessionDetail extends SessionSummary {
-  exercises: (Exercise & { sets: SetEntry[] })[];
+  exercises: (Exercise & {
+    sets: SetEntry[];
+    /** The last set of this exercise logged in an earlier session. */
+    previousSet: SetValues | null;
+  })[];
 }
 
 export interface Container {

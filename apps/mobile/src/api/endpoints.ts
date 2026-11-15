@@ -14,6 +14,7 @@ import type {
   SessionResponse,
   SessionSummary,
   SetEntry,
+  SetValues,
   Units,
   User,
   Workout,
@@ -47,6 +48,8 @@ export const createWorkout = (body: { name: string; exercises: ExerciseInput[] }
 export const renameWorkout = (id: string, name: string) =>
   api.patch<Workout>(`/workouts/${seg(id)}`, { name });
 export const deleteWorkout = (id: string) => api.delete<void>(`/workouts/${seg(id)}`);
+export const duplicateWorkout = (id: string) =>
+  api.post<Workout>(`/workouts/${seg(id)}/duplicate`, {});
 export const addExercise = (workoutId: string, body: ExerciseInput) =>
   api.post<Exercise>(`/workouts/${seg(workoutId)}/exercises`, body);
 export const updateExercise = (
@@ -68,7 +71,7 @@ export const endSession = (id: string) => api.post<SessionDetail>(`/sessions/${s
 export const deleteSession = (id: string) => api.delete<void>(`/sessions/${seg(id)}`);
 export const updateSessionNote = (id: string, note: string | null) =>
   api.patch<SessionDetail>(`/sessions/${seg(id)}`, { note });
-export const logSet = (sessionId: string, body: { exerciseId: string; amount: number }) =>
+export const logSet = (sessionId: string, body: { exerciseId: string } & SetValues) =>
   api.post<SetEntry>(`/sessions/${seg(sessionId)}/sets`, body);
 export const deleteSet = (id: string) => api.delete<void>(`/sets/${seg(id)}`);
 
