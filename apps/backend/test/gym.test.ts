@@ -146,6 +146,66 @@ describe('workouts and sessions', () => {
     expect(res.statusCode).toBe(404);
   });
 
+  it('remembers the latest amount per exercise across sessions and falls back after removal', async () => {
+    const workout = await createWorkout(client);
+    const [pushUps, plank] = workout.exercises;
+    const first = (await client.post('/sessions', { workoutId: workout.id })).json();
+    expect(first.exercises.map((e: { previousSet: unknown }) => e.previousSet)).toEqual([
+      null,
+      null,
+      null,
+    ]);
+    await client.post(`/sessions/${first.id}/sets`, { exerciseId: pushUps.id, amount: 50 });
+    clock.set('2026-11-08T10:01:00Z');
+    await client.post(`/sessions/${first.id}/sets`, { exerciseId: pushUps.id, amount: 25 });
+    clock.set('2026-11-08T10:02:00Z');
+    await client.post(`/sessions/${first.id}/sets`, { exerciseId: plank.id, amount: 95 });
+    await client.post(`/sessions/${first.id}/end`);
+
+    clock.set('2026-11-09T10:00:00Z');
+    const second = (await client.post('/sessions', { workoutId: workout.id })).json();
+    expect(second.setCount).toBe(0);
+    expect(second.exercises.map((e: { previousSet: unknown }) => e.previousSet)).toEqual([
+      { amount: 25, weightKg: null },
+      { amount: 95, weightKg: null },
+      null,
+    ]);
+    const logged = await client.post(`/sessions/${second.id}/sets`, {
+      exerciseId: pushUps.id,
+      amount: 40,
+    });
+    expect((await client.get('/sessions/active')).json().exercises[0].sets.at(-1).amount).toBe(40);
+    await client.delete(`/sets/${logged.json().id}`);
+    expect((await client.get('/sessions/active')).json().exercises[0].previousSet.amount).toBe(25);
+
+    // An intervening session without sets must not erase the shortcut.
+    await client.post(`/sessions/${second.id}/end`);
+    const third = (await client.post('/sessions', { workoutId: workout.id })).json();
+    expect(third.exercises[0].previousSet.amount).toBe(25);
+    await client.delete(`/sessions/${first.id}`);
+    expect((await client.get('/sessions/active')).json().exercises[0].previousSet).toBeNull();
+  });
+
+  it('does not reuse amounts from another workout or another user', async () => {
+    const workout = await createWorkout(client);
+    const session = (await client.post('/sessions', { workoutId: workout.id })).json();
+    await client.post(`/sessions/${session.id}/sets`, {
+      exerciseId: workout.exercises[0].id,
+      amount: 25,
+    });
+    await client.post(`/sessions/${session.id}/end`);
+    const anotherWorkout = await createWorkout(client);
+    const anotherSession = (
+      await client.post('/sessions', { workoutId: anotherWorkout.id })
+    ).json();
+    expect(anotherSession.exercises[0].previousSet).toBeNull();
+
+    const { client: other } = await signedInUser(app);
+    const otherWorkout = await createWorkout(other);
+    const otherSession = (await other.post('/sessions', { workoutId: otherWorkout.id })).json();
+    expect(otherSession.exercises[0].previousSet).toBeNull();
+  });
+
   it('keeps past sets when the rate changes', async () => {
     const workout = await createWorkout(client);
     const pushUps = workout.exercises[0];
@@ -207,6 +267,11 @@ describe('workouts and sessions', () => {
     });
     expect((await client.delete(`/sessions/${session.id}`)).statusCode).toBe(204);
     expect((await client.get(`/sessions/${session.id}`)).statusCode).toBe(404);
+    expect((await client.get('/sessions/active')).json()).toBeNull();
+    expect((await client.get('/sessions')).json().items).toEqual([]);
+    const restarted = await client.post('/sessions', { workoutId: workout.id });
+    expect(restarted.statusCode).toBe(201);
+    expect(restarted.json().exercises[0].previousSet).toBeNull();
   });
 
   it('duplicates a workout with its active exercises', async () => {

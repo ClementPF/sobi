@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import {
+  deleteSession,
   deleteSet,
   duplicateWorkout,
   endSession,
@@ -115,12 +116,18 @@ function WorkoutPicker({ workouts }: { workouts: Workout[] }) {
 
 function ExerciseCard({
   exercise,
+  lastSet,
   onAddSet,
+  onRepeatSet,
   onRemoveSet,
+  disabled,
 }: {
-  exercise: Exercise & { sets: SetEntry[] };
+  exercise: SessionDetail['exercises'][number];
+  lastSet: SetValues | null;
   onAddSet(): void;
+  onRepeatSet(values: SetValues): void;
   onRemoveSet(set: SetEntry): void;
+  disabled: boolean;
 }) {
   const units = useUnits();
   const earned = exercise.sets.reduce((sum, s) => sum + s.earnedDrinks, 0);
@@ -139,6 +146,8 @@ function ExerciseCard({
             key={set.id}
             accessibilityRole="button"
             accessibilityLabel={`Remove set ${formatSet(exercise.metric, set, units)}`}
+            accessibilityState={{ disabled }}
+            disabled={disabled}
             onPress={() => onRemoveSet(set)}
             style={styles.chip}
           >
@@ -146,14 +155,32 @@ function ExerciseCard({
           </Pressable>
         ))}
         {!exercise.archived && (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Add set of ${exercise.name}`}
-            onPress={onAddSet}
-            style={[styles.chip, styles.addChip]}
-          >
-            <Text style={[Typography.body, styles.bold]}>+ Set</Text>
-          </Pressable>
+          <View style={styles.row}>
+            {lastSet !== null && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Repeat ${formatSet(exercise.metric, lastSet, units)} of ${exercise.name}`}
+                accessibilityState={{ disabled }}
+                disabled={disabled}
+                onPress={() => onRepeatSet(lastSet)}
+                style={[styles.chip, styles.addChip, disabled && styles.inactive]}
+              >
+                <Text style={[Typography.body, styles.bold]}>
+                  + {formatSet(exercise.metric, lastSet, units)}
+                </Text>
+              </Pressable>
+            )}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Add set of ${exercise.name}`}
+              accessibilityState={{ disabled }}
+              disabled={disabled}
+              onPress={onAddSet}
+              style={[styles.chip, styles.addChip, disabled && styles.inactive]}
+            >
+              <Text style={[Typography.body, styles.bold]}>+ Set</Text>
+            </Pressable>
+          </View>
         )}
       </View>
     </View>
@@ -166,13 +193,14 @@ function ActiveSession({ session }: { session: SessionDetail }) {
   const [sheetFor, setSheetFor] = useState<Exercise | null>(null);
   const [removing, setRemoving] = useState<SetEntry | null>(null);
   const [confirmEnd, setConfirmEnd] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
 
   const refresh = async () => {
     await invalidate();
   };
 
   const log = useMutation({
-    mutationFn: (values: SetValues) => logSet(session.id, { exerciseId: sheetFor!.id, ...values }),
+    mutationFn: (input: { exerciseId: string } & SetValues) => logSet(session.id, input),
     onSuccess: async () => {
       setSheetFor(null);
       await refresh();
@@ -200,6 +228,16 @@ function ActiveSession({ session }: { session: SessionDetail }) {
       await refresh();
     },
   });
+  const cancel = useMutation({
+    mutationFn: () => deleteSession(session.id),
+    onSuccess: async () => {
+      setConfirmCancel(false);
+      client.setQueryData(queryKeys.activeSession, null);
+      await refresh();
+    },
+  });
+  const busy =
+    log.isPending || remove.isPending || saveNote.isPending || end.isPending || cancel.isPending;
 
   /** This session's last set of the exercise, else the last one from an earlier session. */
   const lastSet = (exercise: Exercise): SetValues | null => {
@@ -221,8 +259,11 @@ function ActiveSession({ session }: { session: SessionDetail }) {
           <ExerciseCard
             key={exercise.id}
             exercise={exercise}
+            lastSet={lastSet(exercise)}
             onAddSet={() => setSheetFor(exercise)}
+            onRepeatSet={(values) => log.mutate({ exerciseId: exercise.id, ...values })}
             onRemoveSet={setRemoving}
+            disabled={busy}
           />
         ))}
         <NoteField
@@ -231,14 +272,33 @@ function ActiveSession({ session }: { session: SessionDetail }) {
           saving={saveNote.isPending}
           placeholder="Session note"
         />
-        <ErrorText error={log.error ?? remove.error ?? end.error ?? saveNote.error} />
-        <Button title="End session" onPress={() => setConfirmEnd(true)} />
+        <ErrorText
+          error={
+            log.error ??
+            remove.error ??
+            end.error ??
+            (confirmCancel ? null : cancel.error) ??
+            saveNote.error
+          }
+        />
+        <Button
+          title="End session"
+          disabled={busy}
+          onPress={() => (session.setCount === 0 ? cancel.mutate() : setConfirmEnd(true))}
+        />
+        <Button
+          title="Cancel workout"
+          variant="secondary"
+          loading={cancel.isPending}
+          disabled={busy}
+          onPress={() => (session.setCount === 0 ? cancel.mutate() : setConfirmCancel(true))}
+        />
       </ScrollView>
       <SetSheet
         exercise={sheetFor}
         last={sheetFor ? lastSet(sheetFor) : null}
         saving={log.isPending}
-        onLog={(values) => log.mutate(values)}
+        onLog={(values) => sheetFor && log.mutate({ exerciseId: sheetFor.id, ...values })}
         onClose={() => setSheetFor(null)}
       />
       <ConfirmDialog
@@ -250,6 +310,17 @@ function ActiveSession({ session }: { session: SessionDetail }) {
         onConfirm={() => removing && remove.mutate(removing)}
         onCancel={() => setRemoving(null)}
       />
+      <ConfirmDialog
+        visible={confirmCancel}
+        title="Cancel workout?"
+        message="This session and all its sets will be deleted. The drinks they earned will be removed from your balance."
+        confirmTitle="Discard workout"
+        loading={cancel.isPending}
+        onConfirm={() => cancel.mutate()}
+        onCancel={() => setConfirmCancel(false)}
+      >
+        <ErrorText error={cancel.error} />
+      </ConfirmDialog>
       <ConfirmDialog
         visible={confirmEnd}
         title="End session?"
@@ -281,7 +352,7 @@ export function WorkoutScreen() {
       />
     );
   }
-  if (active.data) return <ActiveSession session={active.data} />;
+  if (active.data) return <ActiveSession key={active.data.id} session={active.data} />;
   if (workouts.isPending) return <CenteredLoading />;
   if (workouts.isError) {
     return (
@@ -322,5 +393,6 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   addChip: { borderColor: Colors.accent },
+  inactive: { opacity: 0.5 },
   error: { ...Typography.body, color: Colors.error },
 });
