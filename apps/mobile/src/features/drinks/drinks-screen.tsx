@@ -29,6 +29,8 @@ import { queryKeys, useInvalidateTotals } from '@/lib/queries';
 import { deviceTimeZone } from '@/lib/time';
 import { Colors, Palette, Radius, Spacing, Typography } from '@/theme';
 
+import { CONTAINER_PORTIONS, portionVolume } from './portions';
+
 const ABV_WHOLE = rangeItems(0, 80);
 const ABV_TENTH = rangeItems(0, 9, 1, (v) => `.${v}`);
 const HOURS = rangeItems(0, 23, 1, (v) => String(v).padStart(2, '0'));
@@ -40,9 +42,9 @@ export const MAX_DAYS_AGO = 365;
 type Volume = { kind: 'container'; container: Container } | { kind: 'custom'; text: string };
 type When = { kind: 'now' } | { kind: 'at'; daysAgo: number; hour: number; minute: number };
 
-export function volumeOf(volume: Volume | null, units: Units): number | null {
+export function volumeOf(volume: Volume | null, units: Units, portion = 1): number | null {
   if (!volume) return null;
-  if (volume.kind === 'container') return volume.container.volumeMl;
+  if (volume.kind === 'container') return portionVolume(volume.container.volumeMl, portion);
   return parseVolume(volume.text, units);
 }
 
@@ -190,6 +192,7 @@ export function DrinksScreen() {
   const [abvWhole, setAbvWhole] = useState(5);
   const [abvTenth, setAbvTenth] = useState(0);
   const [volume, setVolume] = useState<Volume | null>(null);
+  const [portion, setPortion] = useState(1);
   const [when, setWhen] = useState<When>({ kind: 'now' });
   const [note, setNote] = useState('');
   const [managing, setManaging] = useState(false);
@@ -198,21 +201,23 @@ export function DrinksScreen() {
   const selected: Volume | null =
     volume ?? (containers.data?.[0] ? { kind: 'container', container: containers.data[0] } : null);
   const abv = roundTo(abvWhole + abvTenth / 10, 1);
-  const ml = volumeOf(selected, units);
+  const ml = volumeOf(selected, units, portion);
+  const portionLabel = CONTAINER_PORTIONS.find((item) => item.value === portion)!.label;
   const preview = ml ? convertDrink(ml, abv) : null;
   const balance = dashboard.data?.balance;
 
   const log = useMutation({
     mutationFn: () => {
       const body: NewDrink = { abv, consumedAt: consumedAtOf(when), note: note.trim() || null };
+      body.volumeMl = ml!;
       if (selected?.kind === 'container') body.containerId = selected.container.id;
-      else body.volumeMl = ml!;
       return logDrink(body);
     },
     onSuccess: async (drink) => {
       setLogged(`Logged ${formatDrinks(drink.stdDrinks)} standard drinks.`);
       setWhen({ kind: 'now' });
       setNote('');
+      setPortion(1);
       await invalidate();
     },
   });
@@ -258,15 +263,62 @@ export function DrinksScreen() {
               key={c.id}
               label={`${c.name} ${formatVolume(c.volumeMl, units)}`}
               selected={selected?.kind === 'container' && selected.container.id === c.id}
-              onPress={() => setVolume({ kind: 'container', container: c })}
+              onPress={() => {
+                setVolume({ kind: 'container', container: c });
+                setPortion(1);
+              }}
             />
           ))}
           <Chip
             label="Custom"
             selected={selected?.kind === 'custom'}
-            onPress={() => setVolume({ kind: 'custom', text: '' })}
+            onPress={() => {
+              setVolume({ kind: 'custom', text: '' });
+              setPortion(1);
+            }}
           />
         </View>
+        {selected?.kind === 'container' && (
+          <View style={styles.portionRow}>
+            <DrumPicker
+              label="containers"
+              items={CONTAINER_PORTIONS}
+              value={portion}
+              onChange={setPortion}
+              width={100}
+              visibleCount={3}
+            />
+            <View style={[styles.flex, styles.portionSummary]}>
+              <Text style={Typography.caption}>Total amount</Text>
+              <Text style={styles.portionTotal} accessibilityLiveRegion="polite">
+                {ml !== null ? formatVolume(ml, units) : 'Out of range'}
+              </Text>
+              <Text style={Typography.bodySecondary}>
+                {portionLabel} × {formatVolume(selected.container.volumeMl, units)}
+              </Text>
+              {portion !== 1 && (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Reset to one container"
+                  onPress={() => setPortion(1)}
+                  style={styles.resetPortion}
+                >
+                  <Text style={styles.link}>Reset to 1</Text>
+                </Pressable>
+              )}
+            </View>
+          </View>
+        )}
+        {selected?.kind === 'container' && (
+          <Text
+            style={ml === null ? styles.danger : Typography.caption}
+            accessibilityRole={ml === null ? 'alert' : undefined}
+          >
+            {ml === null
+              ? 'Total must be between 1 and 10,000 ml.'
+              : 'Scroll for a fraction of one container, or several.'}
+          </Text>
+        )}
         {selected?.kind === 'custom' && (
           <View style={styles.line}>
             <TextInput
@@ -386,6 +438,7 @@ export function DrinksScreen() {
         onClose={() => {
           setManaging(false);
           setVolume(null);
+          setPortion(1);
         }}
       />
     </ScrollView>
@@ -403,6 +456,10 @@ const styles = StyleSheet.create({
   card: { ...Palette.card, gap: Spacing.sm },
   sectionTitle: { ...Typography.body, fontWeight: '700' },
   drums: { flexDirection: 'row', justifyContent: 'center', gap: Spacing.lg },
+  portionRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg },
+  portionSummary: { gap: Spacing.xs },
+  portionTotal: { ...Typography.body, fontSize: 24, fontWeight: '700' },
+  resetPortion: { minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' },
   line: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   flex: { flex: 1 },
   bold: { fontWeight: '700' },

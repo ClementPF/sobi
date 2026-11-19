@@ -1,5 +1,6 @@
 import fcntl
 import importlib.util
+import json
 import logging
 import os
 from pathlib import Path
@@ -21,10 +22,20 @@ spec.loader.exec_module(deploy)
 
 TARGET = "a" * 40
 PREVIOUS = "b" * 40
+OLD_IMAGES = {"api": "sha256:" + "1" * 64, "web": "sha256:" + "2" * 64}
+NEW_IMAGES = {"api": "sha256:" + "3" * 64, "web": "sha256:" + "4" * 64}
 
 
 class DeployTests(unittest.TestCase):
     def setUp(self):
+        environment = patch.dict(os.environ, {
+            key: "" for key in (
+                "NTFY_URL", "NTFY_TOPIC_URL", "NTFY_TOPIC", "NTFY_SERVER",
+                "NTFY_BASE_URL", "NTFY_TOKEN",
+            )
+        })
+        environment.start()
+        self.addCleanup(environment.stop)
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name).resolve()
@@ -44,6 +55,8 @@ class DeployTests(unittest.TestCase):
         self.failure = None
         self.dump = b"PGDMP-test-backup"
         self.expected_marker = PREVIOUS
+        self.images = dict(OLD_IMAGES)
+        self.new_images = None
         self.runner = patch.object(self.deployer, "run", side_effect=self.run_command)
         self.runner.start()
         self.addCleanup(self.runner.stop)
@@ -63,9 +76,13 @@ class DeployTests(unittest.TestCase):
             kwargs["stdout"].write(self.dump)
         if "pg_restore" in command:
             self.assertEqual(kwargs["stdin"].read(), self.dump)
+        if "up" in command and self.new_images is not None:
+            self.images = dict(self.new_images)
         if "ps" in command:
             return "container-" + command[-1]
         if command[:2] == ["docker", "inspect"]:
+            if "{{.Image}}" in command:
+                return self.images[command[-1].removeprefix("container-")]
             # The success marker must still be old while health is checked.
             if self.expected_marker is None:
                 self.assertFalse(self.marker.exists())
@@ -73,6 +90,132 @@ class DeployTests(unittest.TestCase):
                 self.assertEqual(self.marker.read_text().strip(), self.expected_marker)
             return self.health
         return ""
+
+    def enable_notifications(self, images=None):
+        self.deployer.notifier = Mock(spec=deploy.NtfyNotifier)
+        self.deployer.notifier.send.return_value = True
+        self.new_images = dict(NEW_IMAGES if images is None else images)
+        return self.deployer.notifier
+
+    def test_notifies_changed_frontend_and_backend_only_after_success(self):
+        notifier = self.enable_notifications()
+
+        def send(notification):
+            self.assertEqual(self.marker.read_text().strip(), TARGET)
+            self.assertEqual(notification, {"commit": TARGET, "components": NEW_IMAGES})
+            return True
+
+        notifier.send.side_effect = send
+        self.deployer.deploy()
+        notifier.send.assert_called_once()
+        self.assertEqual(json.loads((self.state / "deployed-images.json").read_text()), NEW_IMAGES)
+        self.assertFalse(list((self.state / "notifications").glob("*.json")))
+
+    def test_notifies_frontend_only_when_backend_image_is_unchanged(self):
+        notifier = self.enable_notifications({**OLD_IMAGES, "web": NEW_IMAGES["web"]})
+        self.deployer.deploy()
+        notifier.send.assert_called_once_with({
+            "commit": TARGET, "components": {"web": NEW_IMAGES["web"]},
+        })
+
+    def test_notifies_backend_only_when_frontend_image_is_unchanged(self):
+        notifier = self.enable_notifications({**OLD_IMAGES, "api": NEW_IMAGES["api"]})
+        self.deployer.deploy()
+        notifier.send.assert_called_once_with({
+            "commit": TARGET, "components": {"api": NEW_IMAGES["api"]},
+        })
+
+    def test_unchanged_images_do_not_send_version_notifications(self):
+        notifier = self.enable_notifications(OLD_IMAGES)
+        self.deployer.deploy()
+        notifier.send.assert_not_called()
+        self.assertEqual(self.marker.read_text().strip(), TARGET)
+
+    def test_disabled_notifications_do_not_inspect_images_or_send_requests(self):
+        with patch.object(deploy, "build_opener") as opener:
+            self.deployer.deploy()
+        opener.assert_not_called()
+        self.assertFalse(any("{{.Image}}" in command for command in self.calls))
+
+    def test_notification_failure_retries_on_noop_poll_without_redeploying(self):
+        notifier = self.enable_notifications()
+        notifier.send.return_value = False
+        self.deployer.deploy()
+        self.assertEqual(self.marker.read_text().strip(), TARGET)
+        pending = self.state / "notifications" / f"{TARGET}.json"
+        self.assertEqual(json.loads(pending.read_text())["components"], NEW_IMAGES)
+        self.assertEqual(stat.S_IMODE(pending.stat().st_mode), 0o600)
+        self.assertEqual(stat.S_IMODE(pending.parent.stat().st_mode), 0o700)
+        self.calls.clear()
+        notifier.send.reset_mock()
+        notifier.send.return_value = True
+        self.deployer.deploy()
+        notifier.send.assert_called_once()
+        self.assertFalse(pending.exists())
+        self.assertFalse(any("build" in command or "up" in command for command in self.calls))
+
+    def test_failed_deployment_never_sends_success_notification(self):
+        notifier = self.enable_notifications()
+        for stage in ("build", "pg_dump", "pg_restore", "up", "inspect"):
+            with self.subTest(stage=stage):
+                self.failure = stage
+                with self.assertRaises(deploy.DeploymentError):
+                    self.deployer.deploy()
+                notifier.send.assert_not_called()
+                self.assertEqual(self.marker.read_text().strip(), PREVIOUS)
+
+    def test_health_failure_then_retry_keeps_last_successful_image_baseline(self):
+        notifier = self.enable_notifications()
+        self.health = "unhealthy"
+        with self.assertRaises(deploy.DeploymentError):
+            self.deployer.deploy()
+        notifier.send.assert_not_called()
+        self.assertEqual(self.images, NEW_IMAGES)
+        self.assertEqual(json.loads((self.state / "deployed-images.json").read_text()), OLD_IMAGES)
+        self.health = "healthy"
+        self.deployer.deploy()
+        notifier.send.assert_called_once_with({"commit": TARGET, "components": NEW_IMAGES})
+
+    def test_broken_notification_state_cannot_fail_a_healthy_deployment(self):
+        notifier = self.enable_notifications()
+        (self.state / "deployed-images.json").write_text("invalid json")
+        self.deployer.deploy()
+        self.assertEqual(self.marker.read_text().strip(), TARGET)
+        notifier.send.assert_not_called()
+        self.logger.warning.assert_called()
+
+    def test_notification_queue_write_failure_cannot_fail_a_healthy_deployment(self):
+        notifier = self.enable_notifications()
+        (self.state / "deployed-images.json").write_text(json.dumps(OLD_IMAGES))
+        with patch.object(self.deployer, "write_json", side_effect=OSError("disk full")):
+            self.deployer.deploy()
+        self.assertEqual(self.marker.read_text().strip(), TARGET)
+        notifier.send.assert_not_called()
+        self.logger.warning.assert_called()
+
+    def test_corrupt_pending_notification_is_logged_without_redeploying(self):
+        notifier = self.enable_notifications()
+        self.marker.write_text(TARGET + "\n")
+        outbox = self.state / "notifications"
+        outbox.mkdir()
+        (outbox / "invalid.json").write_text("[]")
+        self.deployer.deploy()
+        notifier.send.assert_not_called()
+        self.logger.warning.assert_called()
+        self.assertFalse(any("up" in command for command in self.calls))
+
+    def test_corrupt_queue_entry_does_not_block_other_successful_notifications(self):
+        notifier = self.enable_notifications()
+        self.marker.write_text(TARGET + "\n")
+        outbox = self.state / "notifications"
+        outbox.mkdir()
+        (outbox / "000-invalid.json").write_text("[]")
+        (outbox / f"{TARGET}.json").write_text(json.dumps({
+            "commit": TARGET, "components": NEW_IMAGES,
+        }))
+        self.deployer.deploy()
+        notifier.send.assert_called_once_with({"commit": TARGET, "components": NEW_IMAGES})
+        self.assertFalse((outbox / f"{TARGET}.json").exists())
 
     def index(self, token):
         return next(i for i, command in enumerate(self.calls) if token in command)
