@@ -1,9 +1,10 @@
 import { router } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
-import { Pressable, StyleSheet, type ColorValue } from 'react-native';
+import { type ColorValue } from 'react-native';
 
-import { Colors, Spacing } from '@/theme';
+import { IconButton } from '@/components/icon';
+import { Colors } from '@/theme';
 
 type TabIconName = SymbolViewProps['name'];
 
@@ -16,19 +17,12 @@ function tabIcon(name: TabIconName) {
 
 function SettingsButton() {
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel="Settings"
-      hitSlop={8}
+    <IconButton
+      icon="settings"
+      label="Settings"
       onPress={() => router.push('/settings')}
-      style={styles.gear}
-    >
-      <SymbolView
-        name={{ ios: 'gearshape.fill', android: 'settings', web: 'settings' }}
-        tintColor={Colors.text}
-        size={22}
-      />
-    </Pressable>
+      color={Colors.text}
+    />
   );
 }
 
@@ -80,7 +74,3 @@ export default function TabsLayout() {
     </Tabs>
   );
 }
-
-const styles = StyleSheet.create({
-  gear: { paddingHorizontal: Spacing.md },
-});

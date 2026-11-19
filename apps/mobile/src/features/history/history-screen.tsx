@@ -2,7 +2,9 @@ import { useInfiniteQuery, useMutation } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useRef, useState } from 'react';
 import {
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   RefreshControl,
   SectionList,
@@ -17,6 +19,7 @@ import type { HistoryDay, HistoryDrinkEntry, HistoryEntry, Units } from '@/api/t
 import { useUnits } from '@/auth/session';
 import { Button } from '@/components/button';
 import { ConfirmDialog } from '@/components/confirm-dialog';
+import { Icon, IconButton } from '@/components/icon';
 import { CenteredLoading, EmptyState } from '@/components/list-parts';
 import { NoteField } from '@/components/note-field';
 import { formatDrinks, formatSigned, formatVolume } from '@/lib/conversions';
@@ -67,6 +70,14 @@ function EntryRow({
     <Pressable
       accessibilityRole={selecting ? 'checkbox' : 'button'}
       accessibilityState={selecting ? { checked: selected } : undefined}
+      aria-checked={selecting ? selected : undefined}
+      accessibilityHint={
+        selecting
+          ? undefined
+          : entry.type === 'session'
+            ? 'View session details'
+            : 'Edit drink note'
+      }
       onPress={onPress}
       onLongPress={onLongPress}
       style={[styles.entry, selected && styles.entrySelected]}
@@ -90,6 +101,13 @@ function EntryRow({
       <Text style={[styles.amount, { color: amount < 0 ? Colors.drunk : Colors.earned }]}>
         {formatSigned(amount)}
       </Text>
+      {!selecting && (
+        <Icon
+          name={entry.type === 'session' ? 'chevron' : 'edit'}
+          color={Colors.textMuted}
+          size={16}
+        />
+      )}
     </Pressable>
   );
   if (selecting) return row;
@@ -139,7 +157,10 @@ function DrinkNoteSheet({ drink, onClose }: { drink: HistoryDrinkEntry | null; o
   });
   return (
     <Modal visible={drink !== null} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
+      <KeyboardAvoidingView
+        style={styles.backdrop}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
         <View style={styles.dialog}>
           <Text style={Typography.title}>Drink note</Text>
           <NoteField key={drink?.id} value={drink?.note ?? null} onChangeText={setNote} />
@@ -160,7 +181,7 @@ function DrinkNoteSheet({ drink, onClose }: { drink: HistoryDrinkEntry | null; o
             />
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -224,24 +245,21 @@ export function HistoryScreen() {
       {hasEntries && (
         <View style={styles.toolbar}>
           <Text style={[Typography.bodySecondary, styles.flex]}>
-            {selecting ? `${chosen.length} selected` : ''}
+            {selecting ? `${chosen.length} selected` : 'Activity log'}
           </Text>
           {selecting && (
-            <Pressable
-              accessibilityRole="button"
+            <IconButton
+              icon="trash"
+              label="Delete selected entries"
+              color={Colors.error}
               disabled={chosen.length === 0}
               onPress={() => setPending(chosen)}
-              hitSlop={8}
-            >
-              <Text style={[styles.toolbarDanger, chosen.length === 0 && styles.disabled]}>
-                Delete
-              </Text>
-            </Pressable>
+            />
           )}
           <Pressable
             accessibilityRole="button"
             onPress={() => (selecting ? stopSelecting() : setSelecting(true))}
-            hitSlop={8}
+            style={styles.toolbarButton}
           >
             <Text style={styles.toolbarLink}>{selecting ? 'Cancel' : 'Select'}</Text>
           </Pressable>
@@ -305,7 +323,11 @@ export function HistoryScreen() {
       >
         {remove.error && <Text style={styles.error}>{remove.error.message}</Text>}
       </ConfirmDialog>
-      <DrinkNoteSheet drink={editing} onClose={() => setEditing(null)} />
+      <DrinkNoteSheet
+        key={editing?.id ?? 'closed'}
+        drink={editing}
+        onClose={() => setEditing(null)}
+      />
     </View>
   );
 }
@@ -323,8 +345,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
   },
   toolbarLink: { ...Typography.body, color: Colors.accent, fontWeight: '700' },
-  toolbarDanger: { ...Typography.body, color: Colors.error, fontWeight: '700' },
-  disabled: { opacity: 0.4 },
+  toolbarButton: { minHeight: 44, minWidth: 44, justifyContent: 'center', alignItems: 'center' },
   dayHeader: {
     userSelect: 'none',
     flexDirection: 'row',
@@ -337,10 +358,11 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.border,
   },
   entry: {
+    minHeight: 64,
     userSelect: 'none',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.md,
+    gap: Spacing.sm,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     backgroundColor: Colors.surface,
@@ -361,7 +383,7 @@ const styles = StyleSheet.create({
   checkMark: { color: Colors.background, fontWeight: '700', fontSize: 13 },
   time: { ...Typography.caption, width: 48 },
   note: { ...Typography.caption, color: Colors.textSecondary, fontStyle: 'italic' },
-  flex: { flex: 1 },
+  flex: { flex: 1, minWidth: 0 },
   bold: { fontWeight: '700' },
   amount: { ...Typography.body, fontWeight: '700' },
   earned: { ...Typography.body, color: Colors.earned, fontWeight: '700' },
@@ -371,7 +393,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: Spacing.lg,
   },
-  deleteText: { ...Typography.body, fontWeight: '700' },
+  deleteText: { ...Typography.body, color: Colors.onAccent, fontWeight: '700' },
   error: { ...Typography.body, color: Colors.error },
   backdrop: {
     flex: 1,
@@ -379,7 +401,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: Spacing.lg,
   },
-  dialog: { ...Palette.card, gap: Spacing.md, width: '100%', maxWidth: 520, alignSelf: 'center' },
+  dialog: {
+    ...Palette.card,
+    gap: Spacing.md,
+    width: '100%',
+    maxWidth: 520,
+    maxHeight: '90%',
+    alignSelf: 'center',
+  },
   actions: { flexDirection: 'row', gap: Spacing.sm },
   footer: { height: Spacing.xl },
 });

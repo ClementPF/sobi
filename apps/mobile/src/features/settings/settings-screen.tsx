@@ -5,6 +5,8 @@ import type { Units } from '@/api/types';
 
 import { useSession, useUnits } from '@/auth/session';
 import { Button } from '@/components/button';
+import { Icon } from '@/components/icon';
+import { Screen } from '@/components/screen';
 import { versionLabel } from '@/lib/app-info';
 import { formatVolume } from '@/lib/conversions';
 import { Colors, Palette, Radius, Spacing, Typography } from '@/theme';
@@ -35,20 +37,27 @@ function UnitsSwitch() {
 
   return (
     <View style={styles.unitsBox}>
-      <Text style={Typography.caption}>UNITS</Text>
-      <View style={styles.segments} accessibilityRole="radiogroup">
+      <Text style={styles.sectionTitle}>Units</Text>
+      <View style={styles.segments} accessibilityRole="radiogroup" accessibilityLabel="Units">
         {UNIT_OPTIONS.map(({ value, label }) => {
           const selected = (pending ?? current) === value;
           return (
             <Pressable
               key={value}
               accessibilityRole="radio"
-              accessibilityState={{ selected }}
+              aria-checked={selected}
+              accessibilityState={{
+                checked: selected,
+                disabled: pending !== null,
+                busy: pending === value,
+              }}
               accessibilityLabel={label}
+              disabled={pending !== null}
               onPress={() => void choose(value)}
               style={[styles.segment, selected && styles.segmentSelected]}
             >
-              <Text style={[Typography.body, selected && styles.bold]}>{label}</Text>
+              <Text style={[Typography.body, styles.flex, selected && styles.bold]}>{label}</Text>
+              {selected && <Icon name="check" />}
             </Pressable>
           );
         })}
@@ -77,40 +86,45 @@ export function SettingsScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.content}>
-        {user && (
-          <Text style={Typography.bodySecondary}>Signed in as {user.email ?? user.name}</Text>
-        )}
-        <UnitsSwitch />
-        <Text style={[Typography.caption, styles.note]}>
+    <Screen>
+      <View style={styles.card}>
+        <Text style={styles.sectionTitle}>Account</Text>
+        {user && <Text style={Typography.bodySecondary}>{user.email ?? user.name}</Text>}
+      </View>
+      <UnitsSwitch />
+      <View style={styles.card}>
+        <Text style={styles.sectionTitle}>What is a standard drink?</Text>
+        <Text style={styles.note}>
           One standard drink is 14 g of alcohol (US definition): about a {formatVolume(355, units)}{' '}
           beer at 5%, a {formatVolume(148, units)} glass of wine at 12% or a{' '}
           {formatVolume(44, units)} shot at 40%.
         </Text>
-        <Button
-          title="Log out"
-          loading={pending}
-          onPress={() => void onLogout()}
-          style={styles.button}
-        />
       </View>
+      <Button
+        title="Log out"
+        variant="secondary"
+        loading={pending}
+        onPress={() => void onLogout()}
+      />
       <Text style={styles.version}>{versionLabel()}</Text>
-    </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { ...Palette.screen, padding: Spacing.md },
-  content: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md },
-  note: { maxWidth: 360, textAlign: 'center' },
-  button: { width: 300, maxWidth: '100%' },
+  card: { ...Palette.card, gap: Spacing.sm },
+  sectionTitle: { ...Typography.body, fontWeight: '700' },
+  note: { ...Typography.bodySecondary, lineHeight: 24 },
   version: { ...Typography.caption, textAlign: 'center' },
-  unitsBox: { width: 300, maxWidth: '100%', gap: Spacing.xs },
-  segments: { flexDirection: 'row', gap: Spacing.sm },
+  unitsBox: { ...Palette.card, gap: Spacing.sm },
+  segments: { gap: Spacing.sm },
+  flex: { flex: 1 },
   segment: {
-    flex: 1,
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    minHeight: 48,
     alignItems: 'center',
+    paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     borderRadius: Radius.sm,
     borderWidth: 1,

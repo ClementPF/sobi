@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { deleteSession, getSession, updateSessionNote } from '@/api/endpoints';
 import { useUnits } from '@/auth/session';
@@ -9,6 +9,7 @@ import { Button } from '@/components/button';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { CenteredLoading, EmptyState } from '@/components/list-parts';
 import { NoteField } from '@/components/note-field';
+import { Screen } from '@/components/screen';
 import { formatDrinks, formatRate, formatSet, loggedEarnDrinks } from '@/lib/conversions';
 import { queryKeys, useInvalidateTotals } from '@/lib/queries';
 import { formatDate, formatTime } from '@/lib/time';
@@ -40,7 +41,7 @@ export function SessionDetailScreen({ id }: { id: string }) {
   const started = session.startedAt;
 
   return (
-    <ScrollView style={Palette.screen} contentContainerStyle={styles.container}>
+    <Screen>
       <Text style={Typography.title}>{session.workout.name}</Text>
       <Text style={Typography.bodySecondary}>
         {formatDate(started)} · {formatTime(started)}
@@ -85,22 +86,21 @@ export function SessionDetailScreen({ id }: { id: string }) {
         onConfirm={() => remove.mutate()}
         onCancel={() => setConfirm(false)}
       />
-    </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    padding: Spacing.md,
-    gap: Spacing.md,
-    width: '100%',
-    maxWidth: 640,
-    alignSelf: 'center',
-  },
   total: { ...Typography.body, color: Colors.earned, fontWeight: '700', fontSize: 20 },
   card: { ...Palette.card, gap: Spacing.xs },
   bold: { fontWeight: '700' },
-  line: { flexDirection: 'row', justifyContent: 'space-between' },
+  line: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.xs,
+  },
   earned: { ...Typography.body, color: Colors.earned },
   error: { ...Typography.body, color: Colors.error },
 });

@@ -28,6 +28,25 @@ describe('time helpers', () => {
 describe('buildDashboard', () => {
   const today = '2026-11-08';
 
+  it.each([
+    ['1d', 1, '2026-11-08'],
+    ['30d', 30, '2026-10-10'],
+    ['90d', 90, '2026-08-11'],
+    ['365d', 365, '2025-11-09'],
+  ] as const)('builds the %s window with the correct inclusive boundary', (range, count, from) => {
+    const days = [day(addDays(from, -1), 7, 4, 1), day(from, 2, 1, 1)];
+    if (from !== today) days.push(day(today, 3, 2, 1));
+    const result = buildDashboard({ range, today, signupDate: '2025-01-01', days });
+    expect(result.from).toBe(from);
+    expect(result.to).toBe(today);
+    expect(result.series).toHaveLength(count);
+    expect(result.series[0]).toEqual({ date: from, earned: 2, drunk: 1, balance: 4 });
+    expect(result.rangeEarned).toBe(count === 1 ? 2 : 5);
+    expect(result.rangeDrunk).toBe(count === 1 ? 1 : 3);
+    expect(result.stats.avgDrunkPerWeek).toBeCloseTo(((count === 1 ? 1 : 3) * 7) / count, 2);
+    expect(result.balance).toBe(count === 1 ? 4 : 5);
+  });
+
   it('starts the range balance from everything before the range', () => {
     const result = buildDashboard({
       range: '7d',

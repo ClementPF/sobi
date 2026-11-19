@@ -41,8 +41,12 @@ export function Button({
         style,
       ]}
     >
-      {loading ? <ActivityIndicator color={Colors.text} /> : icon}
-      <Text style={styles.label}>{title}</Text>
+      {loading ? (
+        <ActivityIndicator color={variant === 'primary' ? Colors.onAccent : Colors.text} />
+      ) : (
+        icon
+      )}
+      <Text style={[styles.label, variant === 'primary' && styles.primaryLabel]}>{title}</Text>
     </Pressable>
   );
 }
@@ -50,6 +54,7 @@ export function Button({
 const styles = StyleSheet.create({
   base: {
     minHeight: 48,
+    flexShrink: 1,
     borderRadius: Radius.sm,
     paddingHorizontal: Spacing.md,
     flexDirection: 'row',
@@ -65,5 +70,6 @@ const styles = StyleSheet.create({
   },
   inactive: { opacity: 0.5 },
   pressed: { opacity: 0.8 },
-  label: { ...Typography.body, fontWeight: '700' },
+  label: { ...Typography.body, fontWeight: '700', textAlign: 'center', flexShrink: 1 },
+  primaryLabel: { color: Colors.onAccent },
 });

@@ -1,13 +1,15 @@
 import { roundTo } from './conversions.js';
 import { addDays, daysBetween, isoWeekday, weekStart } from '../lib/time.js';
 
-export const DASHBOARD_RANGES = ['7d', '30d', '90d', 'all'] as const;
+export const DASHBOARD_RANGES = ['1d', '7d', '30d', '90d', '365d', 'all'] as const;
 export type DashboardRange = (typeof DASHBOARD_RANGES)[number];
 
 const RANGE_DAYS: Record<Exclude<DashboardRange, 'all'>, number> = {
+  '1d': 1,
   '7d': 7,
   '30d': 30,
   '90d': 90,
+  '365d': 365,
 };
 
 export interface DayTotals {

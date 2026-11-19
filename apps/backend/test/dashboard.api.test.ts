@@ -62,6 +62,23 @@ describe('dashboard and history API', () => {
     expect(body.stats.topDrinkingWeekday).toBe(6);
   });
 
+  it.each([
+    ['1d', 1],
+    ['30d', 30],
+    ['90d', 90],
+    ['365d', 365],
+    ['all', 2],
+  ])('serves the Home %s period through the API', async (range, days) => {
+    await client.post('/drinks', { abv: 5, volumeMl: 355, consumedAt: '2026-11-07T20:00:00Z' });
+    await client.post('/drinks', { abv: 5, volumeMl: 355, consumedAt: '2026-11-08T08:00:00Z' });
+    const response = await client.get(`/dashboard?range=${range}&tz=UTC`);
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ range, to: '2026-11-08' });
+    expect(response.json().series).toHaveLength(days);
+    // Each logged drink stores 1.0003 standard drinks; dashboard totals sum stored values.
+    expect(response.json().rangeDrunk).toBeCloseTo(range === '1d' ? 1.0003 : 2.0006, 4);
+  });
+
   it('assigns entries to local days in the requested time zone', async () => {
     await client.post('/drinks', { abv: 5, volumeMl: 355, consumedAt: '2026-11-08T02:00:00Z' });
     const utc = (await client.get('/dashboard?range=7d&tz=UTC')).json();
@@ -70,6 +87,9 @@ describe('dashboard and history API', () => {
       body.series.find((p) => p.date === date)?.drunk;
     expect(drunkOn(utc, '2026-11-08')).toBeCloseTo(1.0003, 4);
     expect(drunkOn(ny, '2026-11-07')).toBeCloseTo(1.0003, 4);
+    const todayNy = (await client.get('/dashboard?range=1d&tz=America/New_York')).json();
+    expect(todayNy.series).toHaveLength(1);
+    expect(todayNy.rangeDrunk).toBe(0);
     expect((await client.get('/dashboard?tz=Not/AZone')).statusCode).toBe(400);
   });
 

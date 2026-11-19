@@ -17,7 +17,12 @@ export function HeaderButton({ title, onPress }: { title: string; onPress(): voi
 }
 
 const styles = StyleSheet.create({
-  button: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs },
+  button: {
+    minHeight: 44,
+    minWidth: 44,
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.md,
+  },
   pressed: { opacity: 0.6 },
   label: { ...Typography.body, fontWeight: '700', color: Colors.accent },
 });

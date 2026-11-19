@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { Exercise, Metric, SetValues, Units } from '@/api/types';
 import { useUnits } from '@/auth/session';
@@ -148,39 +149,43 @@ function SetSheetBody({
   const weight = weightDrum(units);
 
   return (
-    <View style={styles.sheet} testID="set-sheet">
-      <Text style={Typography.title}>{exercise.name}</Text>
-      <View style={styles.drums}>
-        {drumsFor(exercise.metric, units).map((drum, i) => (
+    <SafeAreaView edges={['bottom']} style={styles.sheet} testID="set-sheet">
+      <ScrollView contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled">
+        <Text style={Typography.title}>{exercise.name}</Text>
+        <View style={styles.drums}>
+          {drumsFor(exercise.metric, units).map((drum, i) => (
+            <DrumPicker
+              key={drum.label}
+              label={drum.label}
+              items={drum.items}
+              value={parts[i] ?? 0}
+              visibleCount={3}
+              onChange={(v) => setParts((prev) => prev.map((p, j) => (j === i ? v : p)))}
+            />
+          ))}
           <DrumPicker
-            key={drum.label}
-            label={drum.label}
-            items={drum.items}
-            value={parts[i] ?? 0}
-            onChange={(v) => setParts((prev) => prev.map((p, j) => (j === i ? v : p)))}
+            label={weight.label}
+            items={weight.items}
+            value={weightStep}
+            visibleCount={3}
+            onChange={setWeightStep}
           />
-        ))}
-        <DrumPicker
-          label={weight.label}
-          items={weight.items}
-          value={weightStep}
-          onChange={setWeightStep}
-        />
-      </View>
-      <Text style={styles.preview}>
-        {formatSet(exercise.metric, { amount, weightKg }, units)} → +{formatDrinks(earned)} drinks
-      </Text>
-      <View style={styles.actions}>
-        <Button title="Cancel" variant="secondary" onPress={onClose} style={styles.flex} />
-        <Button
-          title="Log set"
-          loading={saving}
-          disabled={amount < 1}
-          onPress={() => onLog({ amount, weightKg })}
-          style={styles.flex}
-        />
-      </View>
-    </View>
+        </View>
+        <Text style={styles.preview}>
+          {formatSet(exercise.metric, { amount, weightKg }, units)} → +{formatDrinks(earned)} drinks
+        </Text>
+        <View style={styles.actions}>
+          <Button title="Cancel" variant="secondary" onPress={onClose} style={styles.flex} />
+          <Button
+            title="Log set"
+            loading={saving}
+            disabled={amount < 1}
+            onPress={() => onLog({ amount, weightKg })}
+            style={styles.flex}
+          />
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -190,13 +195,13 @@ const styles = StyleSheet.create({
     ...Palette.card,
     borderBottomLeftRadius: 0,
     borderBottomRightRadius: 0,
-    gap: Spacing.md,
-    paddingBottom: Spacing.xl,
+    maxHeight: '85%',
     width: '100%',
     maxWidth: 640,
     alignSelf: 'center',
   },
-  drums: { flexDirection: 'row', justifyContent: 'center', gap: Spacing.lg },
+  sheetContent: { gap: Spacing.md, paddingBottom: Spacing.sm },
+  drums: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: Spacing.sm },
   preview: { ...Typography.body, textAlign: 'center', color: Colors.earned, fontWeight: '700' },
   actions: { flexDirection: 'row', gap: Spacing.sm },
   flex: { flex: 1 },
