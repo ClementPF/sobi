@@ -173,4 +173,150 @@ describe('dashboard and history API', () => {
     expect((await other.client.get('/drinks')).json().items).toHaveLength(1);
     expect((await client.post('/history/delete', { sessionIds: ['nope'] })).statusCode).toBe(400);
   });
+
+  it('loads the selected day with drink details, full notes, and workout earnings', async () => {
+    await session('2026-11-07T09:00:00Z', 100);
+    const container = (await client.post('/containers', { name: 'Can', volumeMl: 355 })).json();
+    const note = 'a'.repeat(500);
+    const drink = (
+      await client.post('/drinks', {
+        abv: 5,
+        containerId: container.id,
+        consumedAt: '2026-11-07T20:00:00Z',
+        note,
+      })
+    ).json();
+    await client.post('/drinks', { abv: 5, volumeMl: 355, consumedAt: '2026-11-06T20:00:00Z' });
+    const response = await client.get('/history/day?date=2026-11-07&tz=UTC');
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      date: '2026-11-07',
+      earned: 1,
+      drunk: 1.0003,
+      entries: [
+        { type: 'drink', id: drink.id, volumeMl: 355, abv: 5, containerName: 'Can', note },
+        { type: 'session', workoutName: 'Legs', setCount: 1, earnedDrinks: 1 },
+      ],
+    });
+    expect(response.json().entries).toHaveLength(2);
+  });
+
+  it('returns a real empty day instead of the nearest day with activity', async () => {
+    await session('2026-11-07T09:00:00Z', 100);
+    const response = await client.get('/history/day?date=2026-11-06&tz=UTC');
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ date: '2026-11-06', earned: 0, drunk: 0, entries: [] });
+  });
+
+  it('attributes sets across midnight to the selected day, matching the chart', async () => {
+    clock.set('2026-11-07T23:50:00Z');
+    const id = (await client.post('/sessions', { workoutId })).json().id;
+    await client.post(`/sessions/${id}/sets`, { exerciseId, amount: 100 });
+    clock.set('2026-11-08T00:10:00Z');
+    await client.post(`/sessions/${id}/sets`, { exerciseId, amount: 200 });
+    await client.post(`/sessions/${id}/end`);
+    const dashboard = (await client.get('/dashboard?range=7d&tz=UTC')).json();
+    for (const [date, earned] of [
+      ['2026-11-07', 1],
+      ['2026-11-08', 2],
+    ] as const) {
+      const day = (await client.get(`/history/day?date=${date}&tz=UTC`)).json();
+      expect(day.earned).toBe(earned);
+      expect(day.earned).toBe(
+        dashboard.series.find((point: { date: string }) => point.date === date).earned,
+      );
+      expect(day.entries).toHaveLength(1);
+      expect(day.entries[0]).toMatchObject({
+        id,
+        type: 'session',
+        setCount: 1,
+        earnedDrinks: earned,
+      });
+    }
+    // The existing paginated History still summarizes the whole session on its start day.
+    const history = (await client.get('/history?tz=UTC')).json();
+    expect(history.days[0].entries[0]).toMatchObject({ id, setCount: 2, earnedDrinks: 3 });
+  });
+
+  it('includes both repeated DST hours and all 25 hours of the selected local day', async () => {
+    for (const [at, note] of [
+      ['2026-11-01T06:59:00Z', 'before'],
+      ['2026-11-01T07:00:00Z', 'start'],
+      ['2026-11-01T08:30:00Z', 'first 1:30'],
+      ['2026-11-01T09:30:00Z', 'second 1:30'],
+      ['2026-11-02T07:59:00Z', 'end'],
+      ['2026-11-02T08:00:00Z', 'after'],
+    ]) {
+      await client.post('/drinks', { abv: 5, volumeMl: 355, consumedAt: at, note });
+    }
+    const day = (await client.get('/history/day?date=2026-11-01&tz=America/Los_Angeles')).json();
+    expect(day.entries.map((entry: { note: string }) => entry.note)).toEqual([
+      'end',
+      'second 1:30',
+      'first 1:30',
+      'start',
+    ]);
+    expect(day.drunk).toBe(4.0012);
+    const utc = (await client.get('/history/day?date=2026-11-01&tz=UTC')).json();
+    expect(utc.entries.map((entry: { note: string }) => entry.note)).toContain('before');
+    expect(utc.entries.map((entry: { note: string }) => entry.note)).not.toContain('end');
+  });
+
+  it('does not expose another user’s drinks, notes, or workouts in a day drill-down', async () => {
+    await session('2026-11-07T09:00:00Z', 100);
+    const other = await signedInUser(app);
+    await other.client.post('/drinks', {
+      abv: 5,
+      volumeMl: 355,
+      consumedAt: '2026-11-07T20:00:00Z',
+      note: 'private',
+    });
+    const workout = (
+      await other.client.post('/workouts', {
+        name: 'Private workout',
+        exercises: [{ name: 'Squats', metric: 'count', earnDrinks: 1, earnPer: 100 }],
+      })
+    ).json();
+    const id = (await other.client.post('/sessions', { workoutId: workout.id })).json().id;
+    await other.client.post(`/sessions/${id}/sets`, {
+      exerciseId: workout.exercises[0].id,
+      amount: 500,
+    });
+    const day = (await client.get('/history/day?date=2026-11-07&tz=UTC')).json();
+    expect(day.earned).toBe(1);
+    expect(day.drunk).toBe(0);
+    expect(day.entries).toHaveLength(1);
+    expect(day.entries[0].workoutName).toBe('Legs');
+    expect(
+      (await app.inject({ method: 'GET', url: '/history/day?date=2026-11-07' })).statusCode,
+    ).toBe(401);
+  });
+
+  it('includes a started workout even before any drinks have been earned', async () => {
+    clock.set('2026-11-07T09:00:00Z');
+    const id = (await client.post('/sessions', { workoutId })).json().id;
+    const day = (await client.get('/history/day?date=2026-11-07&tz=UTC')).json();
+    expect(day).toMatchObject({
+      date: '2026-11-07',
+      earned: 0,
+      drunk: 0,
+      entries: [
+        { id, type: 'session', workoutName: 'Legs', setCount: 0, earnedDrinks: 0, endedAt: null },
+      ],
+    });
+    expect(day.entries).toHaveLength(1);
+  });
+
+  it('validates actual calendar dates and the time zone', async () => {
+    for (const query of [
+      '',
+      'date=2026-02-30',
+      'date=2025-02-29',
+      'date=2026-1-1',
+      'date=2026-11-07&tz=Nope',
+    ]) {
+      expect((await client.get(`/history/day?${query}`)).statusCode).toBe(400);
+    }
+    expect((await client.get('/history/day?date=2024-02-29&tz=UTC')).statusCode).toBe(200);
+  });
 });

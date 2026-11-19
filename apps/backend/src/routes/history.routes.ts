@@ -7,6 +7,7 @@ import { errorResponseSchema } from '../lib/errors.js';
 import { timeZoneSchema } from '../lib/time.js';
 import { localDay } from '../services/dashboard.service.js';
 import { sessionTotals } from '../services/gym-session.service.js';
+import { historyDay } from '../services/history.service.js';
 
 const sessionEntry = z.object({
   type: z.literal('session'),
@@ -31,16 +32,16 @@ const drinkEntry = z.object({
   note: z.string().nullable(),
 });
 
+const historyDaySchema = z.object({
+  date: z.string(),
+  earned: z.number(),
+  drunk: z.number(),
+  entries: z.array(z.discriminatedUnion('type', [sessionEntry, drinkEntry])),
+});
+
 const historySchema = z
   .object({
-    days: z.array(
-      z.object({
-        date: z.string(),
-        earned: z.number(),
-        drunk: z.number(),
-        entries: z.array(z.discriminatedUnion('type', [sessionEntry, drinkEntry])),
-      }),
-    ),
+    days: z.array(historyDaySchema),
     nextCursor: z.string().nullable().describe('Local date; pass it back to load older days'),
   })
   .meta({ id: 'History' });
@@ -151,6 +152,22 @@ export const historyRoutes: FastifyPluginAsyncZod = async (app) => {
         nextCursor: allDays.length > limit ? (days[days.length - 1] ?? null) : null,
       };
     },
+  );
+
+  app.get(
+    '/history/day',
+    {
+      onRequest: [app.authenticate],
+      schema: {
+        tags: ['history'],
+        summary: 'Drinks and workout sets logged on one local calendar day',
+        description: 'Workout counts and earnings include only sets logged on the selected day.',
+        security: [{ bearerAuth: [] }],
+        querystring: z.object({ date: z.iso.date(), tz: timeZoneSchema }),
+        response: { 200: historyDaySchema, 400: errorResponseSchema, 401: errorResponseSchema },
+      },
+    },
+    (request) => historyDay(app.db, request.user.id, request.query.date, request.query.tz),
   );
 
   app.post(

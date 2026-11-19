@@ -1,14 +1,35 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { fireEvent, render as renderUI, screen, waitFor } from '@testing-library/react-native';
+import type { ReactElement } from 'react';
 import { StyleSheet } from 'react-native';
 
 import type { Dashboard } from '@/api/types';
-import { getDashboard } from '@/api/endpoints';
+import { getDashboard, getHistoryDay } from '@/api/endpoints';
 import { BalanceCard, DashboardScreen, DashboardView } from '@/features/dashboard/dashboard-screen';
 import { Colors } from '@/theme';
 
 jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
-jest.mock('@/api/endpoints', () => ({ getDashboard: jest.fn() }));
+jest.mock('@/api/endpoints', () => ({ getDashboard: jest.fn(), getHistoryDay: jest.fn() }));
+jest.mock('@/auth/session', () => ({ useUnits: () => 'metric' }));
+
+const clients: QueryClient[] = [];
+async function render(ui: ReactElement) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+  });
+  clients.push(client);
+  const result = await renderUI(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+  if (screen.queryByTestId('activity-day')) {
+    await screen.findByText('No drinks or workouts logged on this day.');
+  }
+  return result;
+}
+beforeEach(() => {
+  jest
+    .mocked(getHistoryDay)
+    .mockImplementation(async (date) => ({ date, earned: 0, drunk: 0, entries: [] }));
+});
+afterEach(() => clients.splice(0).forEach((client) => client.clear()));
 
 const dashboard: Dashboard = {
   range: '7d',
@@ -82,7 +103,9 @@ describe('dashboard', () => {
         onRangeChange={jest.fn()}
       />,
     );
-    expect(screen.getByTestId('empty-period')).toHaveTextContent(/No activity in this period/);
+    expect(screen.getByTestId('empty-period')).toHaveTextContent(
+      /No drinks earned or drunk in this period/,
+    );
     expect(screen.queryByTestId('balance-chart')).toBeNull();
     expect(screen.getByTestId('balance-value')).toHaveTextContent('-1.75');
   });
@@ -103,6 +126,7 @@ describe('dashboard', () => {
         </QueryClientProvider>,
       );
       await screen.findByText('1mo');
+      await screen.findByText('No drinks or workouts logged on this day.');
       expect(screen.getAllByRole('radio')).toHaveLength(5);
       for (const [label, description, value] of [
         ['1d', 'Today', '1d'],
