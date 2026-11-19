@@ -74,6 +74,43 @@ describe('containers and drinks', () => {
     });
   });
 
+  it.each([
+    [178, 7.02, 0.5016],
+    [710, 28.01, 2.0007],
+    [10_000, 394.5, 28.1786],
+  ])(
+    'logs a scaled container as %s ml, retaining its identity and base size',
+    async (volumeMl, alcoholG, stdDrinks) => {
+      const can = (await client.get('/containers'))
+        .json()
+        .find((c: { name: string }) => c.name === 'Can');
+      const res = await client.post('/drinks', { abv: 5, containerId: can.id, volumeMl });
+      expect(res.statusCode).toBe(201);
+      expect(res.json()).toMatchObject({
+        volumeMl,
+        alcoholG,
+        stdDrinks,
+        containerId: can.id,
+        containerName: 'Can',
+      });
+      const unchanged = (await client.get('/containers'))
+        .json()
+        .find((c: { id: string }) => c.id === can.id);
+      expect(unchanged.volumeMl).toBe(355);
+      await client.patch(`/containers/${can.id}`, { volumeMl: 500 });
+      expect((await client.get('/drinks')).json().items[0].volumeMl).toBe(volumeMl);
+    },
+  );
+
+  it('rejects scaled container volumes outside the permitted bounds', async () => {
+    const container = (await client.get('/containers')).json()[0];
+    for (const volumeMl of [0, 10_001]) {
+      expect(
+        (await client.post('/drinks', { abv: 5, containerId: container.id, volumeMl })).statusCode,
+      ).toBe(400);
+    }
+  });
+
   it('requires a volume or a container and validates abv', async () => {
     const missing = await client.post('/drinks', { abv: 5 });
     expect(missing.statusCode).toBe(400);

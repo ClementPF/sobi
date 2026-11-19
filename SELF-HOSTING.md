@@ -216,6 +216,43 @@ the app unavailable. Fix forward or perform a deliberate database restore using 
 pre-deployment backup. A Git rollback alone cannot undo a database migration. The marker only
 tracks code commits, so environment-only changes still require a manual rebuild/redeploy.
 
+### ntfy update notifications
+
+The polling deployer can reuse **host environment variables** for ntfy. Configure either:
+
+- `NTFY_URL` (or `NTFY_TOPIC_URL`): the complete private topic URL.
+- `NTFY_TOPIC` plus optional `NTFY_SERVER` (or `NTFY_BASE_URL`, default `https://ntfy.sh`).
+  `NTFY_TOPIC` may also contain the complete topic URL.
+- `NTFY_TOKEN`: optional bearer token for a protected topic.
+
+No destination is hardcoded. With no topic configured, notifications are disabled. Prefer
+HTTPS and a private/authenticated topic. URLs containing embedded credentials, query strings,
+or fragments are rejected. Redirects are not followed, so publishing credentials cannot be
+forwarded to another destination. Invalid configuration is logged without its values and does
+not block deployments.
+
+For an interactive run, export these variables before invoking `scripts/deploy.py`. For
+launchd, add them to the `EnvironmentVariables` dictionary in the plist below; launchd does
+not inherit your terminal's exports. For cron, set them in the deployment user's protected
+environment. Variables placed **only** in Compose's `.env.production` are not automatically
+available to this host-side Python process. Never use `EXPO_PUBLIC_*` for notification settings,
+and never commit real topic URLs or tokens.
+
+After **both** API and web health checks succeed and the deployment is recorded, a single
+notification identifies the frontend and/or backend whose running Docker image changed.
+The message includes the deployment Git revision and each changed image's short SHA-256
+build identifier. Rebuilds that reuse the same images and unchanged polls send nothing.
+Manual Compose updates outside the polling deployer are not monitored.
+
+The deployer records a private `deployed-images.json` baseline before restarting services,
+so a failed/partly restarted deployment still gets the right comparison when retried.
+Undelivered messages are saved privately under `<state-dir>/notifications/` and retried on
+later polls, including polls with no new code, without rebuilding or restarting the app.
+Requests time out after five seconds; notification errors never turn a healthy deployment
+into a failed deployment. As with most push delivery, a timeout or crash after the server
+accepted a message can cause a duplicate on retry. Notification state contains build IDs,
+not topics, tokens, or application data.
+
 ### macOS: run every minute with launchd
 
 Run as the same logged-in user that runs Docker Desktop. Docker Desktop's default
