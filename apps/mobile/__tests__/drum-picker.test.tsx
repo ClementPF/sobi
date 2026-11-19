@@ -62,6 +62,32 @@ describe('DrumPicker', () => {
     await fireEvent.press(screen.getByLabelText('reps 15'));
     expect(onChange).toHaveBeenCalledWith(15);
   });
+
+  it('supports screen-reader adjustments and clamps them at the ends', async () => {
+    const onChange = jest.fn();
+    await render(<DrumPicker testID="drum" items={items} value={0} onChange={onChange} />);
+    await fireEvent(screen.getByTestId('drum'), 'accessibilityAction', {
+      nativeEvent: { actionName: 'decrement' },
+    });
+    expect(onChange).not.toHaveBeenCalled();
+    await fireEvent(screen.getByTestId('drum'), 'accessibilityAction', {
+      nativeEvent: { actionName: 'increment' },
+    });
+    expect(onChange).toHaveBeenCalledWith(5);
+  });
+  it('supports keyboard arrows and endpoint shortcuts without handling unrelated keys', async () => {
+    const onChange = jest.fn();
+    const preventDefault = jest.fn();
+    await render(<DrumPicker testID="drum" items={items} value={10} onChange={onChange} />);
+    for (const key of ['ArrowUp', 'Home', 'End', 'Tab']) {
+      await fireEvent(screen.getByTestId('drum'), 'keyDown', {
+        nativeEvent: { key },
+        preventDefault,
+      });
+    }
+    expect(onChange.mock.calls).toEqual([[15], [0], [20]]);
+    expect(preventDefault).toHaveBeenCalledTimes(3);
+  });
 });
 
 describe('set amounts', () => {

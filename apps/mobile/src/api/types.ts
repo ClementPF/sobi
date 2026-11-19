@@ -124,7 +124,7 @@ export interface NewDrink {
   note?: string | null;
 }
 
-export type DashboardRange = '7d' | '30d' | '90d' | 'all';
+export type DashboardRange = '1d' | '7d' | '30d' | '90d' | '365d' | 'all';
 
 export interface Dashboard {
   range: DashboardRange;

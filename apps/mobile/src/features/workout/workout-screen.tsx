@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import {
   deleteSession,
@@ -18,8 +18,10 @@ import type { Exercise, SessionDetail, SetEntry, SetValues, Workout } from '@/ap
 import { useUnits } from '@/auth/session';
 import { Button } from '@/components/button';
 import { ConfirmDialog } from '@/components/confirm-dialog';
+import { Icon, IconButton } from '@/components/icon';
 import { CenteredLoading, EmptyState } from '@/components/list-parts';
 import { NoteField } from '@/components/note-field';
+import { Screen } from '@/components/screen';
 import { formatDrinks, formatRate, formatSet } from '@/lib/conversions';
 import { queryKeys, useInvalidateTotals } from '@/lib/queries';
 import { Colors, Palette, Radius, Spacing, Typography } from '@/theme';
@@ -56,7 +58,7 @@ function WorkoutPicker({ workouts }: { workouts: Workout[] }) {
   });
 
   return (
-    <ScrollView style={Palette.screen} contentContainerStyle={styles.container}>
+    <Screen>
       <Text style={Typography.title}>Pick a workout</Text>
       {workouts.length === 0 && (
         <Text style={Typography.bodySecondary}>
@@ -67,29 +69,20 @@ function WorkoutPicker({ workouts }: { workouts: Workout[] }) {
         <View key={workout.id} style={styles.card}>
           <View style={styles.row}>
             <Text style={[Typography.body, styles.bold, styles.flex]}>{workout.name}</Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Duplicate ${workout.name}`}
+            <IconButton
+              icon="duplicate"
+              label={`Duplicate ${workout.name}`}
               disabled={duplicate.isPending}
+              loading={duplicate.isPending && duplicate.variables === workout.id}
               onPress={() => duplicate.mutate(workout.id)}
-              hitSlop={8}
-            >
-              <Text style={[styles.link, duplicate.isPending && styles.muted]}>
-                {duplicate.isPending && duplicate.variables === workout.id
-                  ? 'Duplicating…'
-                  : 'Duplicate'}
-              </Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Edit ${workout.name}`}
+            />
+            <IconButton
+              icon="edit"
+              label={`Edit ${workout.name}`}
               onPress={() =>
                 router.push({ pathname: '/workouts/[id]', params: { id: workout.id } })
               }
-              hitSlop={8}
-            >
-              <Text style={styles.link}>Edit</Text>
-            </Pressable>
+            />
           </View>
           {workout.exercises.map((e) => (
             <Text key={e.id} style={Typography.caption}>
@@ -108,9 +101,10 @@ function WorkoutPicker({ workouts }: { workouts: Workout[] }) {
       <Button
         title="New workout"
         variant="secondary"
+        icon={<Icon name="plus" color={Colors.text} />}
         onPress={() => router.push('/workouts/new')}
       />
-    </ScrollView>
+    </Screen>
   );
 }
 
@@ -155,7 +149,7 @@ function ExerciseCard({
           </Pressable>
         ))}
         {!exercise.archived && (
-          <View style={styles.row}>
+          <View style={[styles.row, styles.wrap]}>
             {lastSet !== null && (
               <Pressable
                 accessibilityRole="button"
@@ -248,7 +242,15 @@ function ActiveSession({ session }: { session: SessionDetail }) {
 
   return (
     <View style={Palette.screen}>
-      <ScrollView contentContainerStyle={styles.container}>
+      <Screen
+        footer={
+          <Button
+            title="End session"
+            disabled={busy}
+            onPress={() => (session.setCount === 0 ? cancel.mutate() : setConfirmEnd(true))}
+          />
+        }
+      >
         <View style={styles.header}>
           <Text style={Typography.title}>{session.workout.name}</Text>
           <Text style={styles.total} testID="session-earned">
@@ -282,18 +284,13 @@ function ActiveSession({ session }: { session: SessionDetail }) {
           }
         />
         <Button
-          title="End session"
-          disabled={busy}
-          onPress={() => (session.setCount === 0 ? cancel.mutate() : setConfirmEnd(true))}
-        />
-        <Button
           title="Cancel workout"
           variant="secondary"
           loading={cancel.isPending}
           disabled={busy}
           onPress={() => (session.setCount === 0 ? cancel.mutate() : setConfirmCancel(true))}
         />
-      </ScrollView>
+      </Screen>
       <SetSheet
         exercise={sheetFor}
         last={sheetFor ? lastSet(sheetFor) : null}
@@ -367,24 +364,18 @@ export function WorkoutScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    padding: Spacing.md,
-    gap: Spacing.md,
-    width: '100%',
-    maxWidth: 640,
-    alignSelf: 'center',
-  },
   header: { gap: Spacing.xs },
   total: { ...Typography.body, color: Colors.earned, fontWeight: '700', fontSize: 20 },
   card: { ...Palette.card, gap: Spacing.sm },
   row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  flex: { flex: 1 },
+  flex: { flex: 1, minWidth: 0 },
+  wrap: { flexWrap: 'wrap' },
   bold: { fontWeight: '700' },
-  link: { ...Typography.body, color: Colors.accent, fontWeight: '700' },
-  muted: { opacity: 0.5 },
   earned: { ...Typography.body, color: Colors.earned, fontWeight: '700' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
   chip: {
+    minHeight: 44,
+    justifyContent: 'center',
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
     borderRadius: Radius.lg,

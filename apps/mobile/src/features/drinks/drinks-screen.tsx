@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   createContainer,
@@ -14,8 +15,10 @@ import type { Container, NewDrink, Units } from '@/api/types';
 import { useUnits } from '@/auth/session';
 import { Button } from '@/components/button';
 import { DrumPicker, rangeItems } from '@/components/drum-picker';
-import { CenteredLoading } from '@/components/list-parts';
+import { Icon, IconButton } from '@/components/icon';
+import { CenteredLoading, EmptyState } from '@/components/list-parts';
 import { NoteField } from '@/components/note-field';
+import { Screen } from '@/components/screen';
 import {
   convertDrink,
   formatDrinks,
@@ -35,6 +38,7 @@ const ABV_WHOLE = rangeItems(0, 80);
 const ABV_TENTH = rangeItems(0, 9, 1, (v) => `.${v}`);
 const HOURS = rangeItems(0, 23, 1, (v) => String(v).padStart(2, '0'));
 const MINUTES = rangeItems(0, 55, 5, (v) => String(v).padStart(2, '0'));
+const CUSTOM_VOLUME = '__custom__';
 
 /** How far back a drink can be logged. */
 export const MAX_DAYS_AGO = 365;
@@ -75,7 +79,8 @@ function Chip({ label, selected, onPress }: { label: string; selected: boolean; 
   return (
     <Pressable
       accessibilityRole="radio"
-      accessibilityState={{ selected }}
+      accessibilityState={{ checked: selected }}
+      aria-checked={selected}
       onPress={onPress}
       style={[styles.chip, selected && styles.chipSelected]}
     >
@@ -111,72 +116,84 @@ function ContainerManager({ visible, onClose }: { visible: boolean; onClose(): v
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <ScrollView style={Palette.screen} contentContainerStyle={styles.container}>
-        <Text style={Typography.title}>Containers</Text>
-        {containers.data?.map((c) => (
-          <View key={`${c.id}-${units}`} style={styles.line}>
+      <SafeAreaView style={Palette.screen}>
+        <Screen footer={<Button title="Done" onPress={onClose} />}>
+          <Text style={Typography.title}>Containers</Text>
+          <Text style={Typography.bodySecondary}>Set the sizes you use most often.</Text>
+          {containers.data?.map((c) => (
+            <View key={`${c.id}-${units}`} style={styles.card}>
+              <View style={styles.line}>
+                <TextInput
+                  accessibilityLabel={`${c.name} name`}
+                  defaultValue={c.name}
+                  onEndEditing={(e) => {
+                    const next = e.nativeEvent.text.trim();
+                    if (next && next !== c.name) rename.mutate({ id: c.id, name: next });
+                  }}
+                  style={[styles.input, styles.flex]}
+                />
+                <IconButton
+                  icon="trash"
+                  label={`Delete ${c.name}`}
+                  color={Colors.error}
+                  disabled={remove.isPending}
+                  onPress={() => remove.mutate(c.id)}
+                />
+              </View>
+              <View style={styles.line}>
+                <Text style={[Typography.caption, styles.flex]}>Volume</Text>
+                <TextInput
+                  accessibilityLabel={`${c.name} volume`}
+                  defaultValue={volumeValue(c.volumeMl, units)}
+                  keyboardType="decimal-pad"
+                  onEndEditing={(e) => {
+                    const text = e.nativeEvent.text;
+                    if (text === volumeValue(c.volumeMl, units)) return;
+                    const next = parseVolume(text, units);
+                    if (next !== null && next !== c.volumeMl) {
+                      rename.mutate({ id: c.id, volumeMl: next });
+                    }
+                  }}
+                  style={[styles.input, styles.ml]}
+                />
+                <Text style={Typography.bodySecondary}>{unit}</Text>
+              </View>
+            </View>
+          ))}
+          <View style={styles.line}>
             <TextInput
-              accessibilityLabel={`${c.name} name`}
-              defaultValue={c.name}
-              onEndEditing={(e) => {
-                const next = e.nativeEvent.text.trim();
-                if (next && next !== c.name) rename.mutate({ id: c.id, name: next });
-              }}
+              accessibilityLabel="New container name"
+              value={name}
+              onChangeText={setName}
+              placeholder="Name"
+              placeholderTextColor={Colors.textMuted}
               style={[styles.input, styles.flex]}
             />
             <TextInput
-              accessibilityLabel={`${c.name} volume`}
-              defaultValue={volumeValue(c.volumeMl, units)}
+              accessibilityLabel="New container volume"
+              value={ml}
+              onChangeText={setMl}
+              placeholder={unit}
+              placeholderTextColor={Colors.textMuted}
               keyboardType="decimal-pad"
-              onEndEditing={(e) => {
-                const text = e.nativeEvent.text;
-                if (text === volumeValue(c.volumeMl, units)) return;
-                const next = parseVolume(text, units);
-                if (next !== null && next !== c.volumeMl) {
-                  rename.mutate({ id: c.id, volumeMl: next });
-                }
-              }}
               style={[styles.input, styles.ml]}
             />
-            <Text style={Typography.bodySecondary}>{unit}</Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Delete ${c.name}`}
-              onPress={() => remove.mutate(c.id)}
-            >
-              <Text style={styles.danger}>Delete</Text>
-            </Pressable>
           </View>
-        ))}
-        <View style={styles.line}>
-          <TextInput
-            accessibilityLabel="New container name"
-            value={name}
-            onChangeText={setName}
-            placeholder="Name"
-            placeholderTextColor={Colors.textMuted}
-            style={[styles.input, styles.flex]}
+          <Button
+            title="Add container"
+            variant="secondary"
+            loading={add.isPending}
+            disabled={!name.trim() || newVolume === null}
+            onPress={() => add.mutate()}
           />
-          <TextInput
-            accessibilityLabel="New container volume"
-            value={ml}
-            onChangeText={setMl}
-            placeholder={unit}
-            placeholderTextColor={Colors.textMuted}
-            keyboardType="decimal-pad"
-            style={[styles.input, styles.ml]}
-          />
-        </View>
-        <Button
-          title="Add container"
-          variant="secondary"
-          loading={add.isPending}
-          disabled={!name.trim() || newVolume === null}
-          onPress={() => add.mutate()}
-        />
-        <Text style={Typography.caption}>Drinks already logged keep their volume.</Text>
-        <Button title="Done" onPress={onClose} />
-      </ScrollView>
+          <Text style={Typography.caption}>Drinks already logged keep their volume.</Text>
+          {(add.error || rename.error || remove.error || containers.error) && (
+            <Text style={styles.danger} accessibilityRole="alert">
+              {(add.error ?? rename.error ?? remove.error ?? containers.error)?.message}
+            </Text>
+          )}
+        </Screen>
+      </SafeAreaView>
     </Modal>
   );
 }
@@ -194,12 +211,21 @@ export function DrinksScreen() {
   const [volume, setVolume] = useState<Volume | null>(null);
   const [portion, setPortion] = useState(1);
   const [when, setWhen] = useState<When>({ kind: 'now' });
+  const [editingWhen, setEditingWhen] = useState(false);
   const [note, setNote] = useState('');
   const [managing, setManaging] = useState(false);
   const [logged, setLogged] = useState<string | null>(null);
 
-  const selected: Volume | null =
-    volume ?? (containers.data?.[0] ? { kind: 'container', container: containers.data[0] } : null);
+  const ordered = [...(containers.data ?? [])].sort(
+    (a, b) => a.volumeMl - b.volumeMl || a.name.localeCompare(b.name) || a.id.localeCompare(b.id),
+  );
+  const selected: Volume =
+    volume ??
+    (ordered[0] ? { kind: 'container', container: ordered[0] } : { kind: 'custom', text: '' });
+  const containerItems = [
+    ...ordered.map((c) => ({ value: c.id, label: `${c.name} ${formatVolume(c.volumeMl, units)}` })),
+    { value: CUSTOM_VOLUME, label: 'Custom volume' },
+  ];
   const abv = roundTo(abvWhole + abvTenth / 10, 1);
   const ml = volumeOf(selected, units, portion);
   const portionLabel = CONTAINER_PORTIONS.find((item) => item.value === portion)!.label;
@@ -216,6 +242,7 @@ export function DrinksScreen() {
     onSuccess: async (drink) => {
       setLogged(`Logged ${formatDrinks(drink.stdDrinks)} standard drinks.`);
       setWhen({ kind: 'now' });
+      setEditingWhen(false);
       setNote('');
       setPortion(1);
       await invalidate();
@@ -223,6 +250,15 @@ export function DrinksScreen() {
   });
 
   if (containers.isPending) return <CenteredLoading />;
+  if (containers.isError) {
+    return (
+      <EmptyState
+        title="Could not load your containers."
+        actionTitle="Try again"
+        onAction={() => void containers.refetch()}
+      />
+    );
+  }
 
   const now = new Date();
   const pickDay = (daysAgo: number) =>
@@ -241,198 +277,236 @@ export function DrinksScreen() {
   const days = rangeItems(0, MAX_DAYS_AGO, 1, (d) => dayLabel(d, now));
 
   return (
-    <ScrollView style={Palette.screen} contentContainerStyle={styles.container}>
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Strength (ABV %)</Text>
-        <View style={styles.drums}>
-          <DrumPicker label="%" items={ABV_WHOLE} value={abvWhole} onChange={setAbvWhole} />
-          <DrumPicker label="tenths" items={ABV_TENTH} value={abvTenth} onChange={setAbvTenth} />
-        </View>
-      </View>
-
-      <View style={styles.card}>
-        <View style={styles.line}>
-          <Text style={[styles.sectionTitle, styles.flex]}>Amount</Text>
-          <Pressable accessibilityRole="button" onPress={() => setManaging(true)}>
-            <Text style={styles.link}>Manage</Text>
-          </Pressable>
-        </View>
-        <View style={styles.chips}>
-          {containers.data?.map((c) => (
-            <Chip
-              key={c.id}
-              label={`${c.name} ${formatVolume(c.volumeMl, units)}`}
-              selected={selected?.kind === 'container' && selected.container.id === c.id}
-              onPress={() => {
-                setVolume({ kind: 'container', container: c });
+    <Screen
+      footer={
+        <>
+          <View testID="drink-preview" style={styles.portionSummary}>
+            {preview && ml ? (
+              <>
+                <Text style={Typography.body}>
+                  {formatVolume(ml, units)} × {abv}% ·{' '}
+                  <Text style={styles.bold}>{formatDrinks(preview.stdDrinks)} std drinks</Text>
+                </Text>
+                {balance !== undefined && (
+                  <Text style={Typography.caption}>
+                    Balance after:{' '}
+                    <Text
+                      style={{
+                        color: balance - preview.stdDrinks < 0 ? Colors.drunk : Colors.earned,
+                      }}
+                    >
+                      {formatDrinks(balance - preview.stdDrinks)}
+                    </Text>
+                  </Text>
+                )}
+              </>
+            ) : (
+              <Text style={Typography.caption}>Pick a container or enter a volume.</Text>
+            )}
+          </View>
+          {log.error && (
+            <Text style={styles.danger} accessibilityRole="alert">
+              {log.error.message}
+            </Text>
+          )}
+          {logged && !log.isPending && (
+            <Text style={styles.success} accessibilityLiveRegion="polite">
+              {logged}
+            </Text>
+          )}
+          <Button
+            title="Log drink"
+            loading={log.isPending}
+            disabled={!preview}
+            onPress={() => {
+              setLogged(null);
+              log.mutate();
+            }}
+          />
+        </>
+      }
+    >
+      <View style={styles.formSection}>
+        <View style={styles.amountFields} testID="drink-fields">
+          <View style={styles.flex}>
+            <DrumPicker
+              label="Container"
+              labelPosition="above"
+              items={containerItems}
+              value={selected.kind === 'container' ? selected.container.id : CUSTOM_VOLUME}
+              width="100%"
+              visibleCount={3}
+              itemTextStyle={Typography.body}
+              onChange={(id) => {
+                const container = ordered.find((c) => c.id === id);
+                setVolume(
+                  container ? { kind: 'container', container } : { kind: 'custom', text: '' },
+                );
                 setPortion(1);
               }}
             />
-          ))}
-          <Chip
-            label="Custom"
-            selected={selected?.kind === 'custom'}
-            onPress={() => {
-              setVolume({ kind: 'custom', text: '' });
-              setPortion(1);
-            }}
-          />
-        </View>
-        {selected?.kind === 'container' && (
-          <View style={styles.portionRow}>
+          </View>
+          {selected?.kind === 'container' && (
             <DrumPicker
-              label="containers"
+              label="Quantity"
+              labelPosition="above"
               items={CONTAINER_PORTIONS}
               value={portion}
               onChange={setPortion}
-              width={100}
+              width={56}
               visibleCount={3}
             />
-            <View style={[styles.flex, styles.portionSummary]}>
-              <Text style={Typography.caption}>Total amount</Text>
-              <Text style={styles.portionTotal} accessibilityLiveRegion="polite">
-                {ml !== null ? formatVolume(ml, units) : 'Out of range'}
-              </Text>
-              <Text style={Typography.bodySecondary}>
-                {portionLabel} × {formatVolume(selected.container.volumeMl, units)}
-              </Text>
-              {portion !== 1 && (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Reset to one container"
-                  onPress={() => setPortion(1)}
-                  style={styles.resetPortion}
-                >
-                  <Text style={styles.link}>Reset to 1</Text>
-                </Pressable>
-              )}
+          )}
+          {selected.kind === 'custom' && (
+            <View style={styles.customField}>
+              <Text style={Typography.caption}>Volume ({volumeUnit(units)})</Text>
+              <View style={styles.customInput}>
+                <TextInput
+                  accessibilityLabel={`Custom volume in ${volumeUnit(units)}`}
+                  value={selected.text}
+                  onChangeText={(text) =>
+                    setVolume({ kind: 'custom', text: text.replace(/[^\d.,]/g, '') })
+                  }
+                  keyboardType="decimal-pad"
+                  placeholder={units === 'imperial' ? '12' : '330'}
+                  placeholderTextColor={Colors.textMuted}
+                  style={[styles.input, styles.ml]}
+                />
+              </View>
+            </View>
+          )}
+          <View style={styles.strengthField} testID="drink-strength">
+            <Text style={[Typography.caption, styles.fieldLabel]}>ABV %</Text>
+            <View style={styles.strengthDrums}>
+              <DrumPicker
+                label="ABV whole percent"
+                labelPosition="hidden"
+                items={ABV_WHOLE}
+                value={abvWhole}
+                onChange={setAbvWhole}
+                width={44}
+                visibleCount={3}
+              />
+              <DrumPicker
+                label="ABV tenths"
+                labelPosition="hidden"
+                items={ABV_TENTH}
+                value={abvTenth}
+                onChange={setAbvTenth}
+                width={44}
+                visibleCount={3}
+              />
             </View>
           </View>
-        )}
-        {selected?.kind === 'container' && (
-          <Text
-            style={ml === null ? styles.danger : Typography.caption}
-            accessibilityRole={ml === null ? 'alert' : undefined}
-          >
-            {ml === null
-              ? 'Total must be between 1 and 10,000 ml.'
-              : 'Scroll for a fraction of one container, or several.'}
+        </View>
+        <View style={styles.line}>
+          <Text style={[Typography.bodySecondary, styles.flex]} accessibilityLiveRegion="polite">
+            {selected.kind === 'container'
+              ? `${portionLabel} × ${selected.container.name} (${formatVolume(selected.container.volumeMl, units)})`
+              : 'Custom volume'}
+          </Text>
+          {selected.kind === 'container' && portion !== 1 && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Reset to one container"
+              onPress={() => setPortion(1)}
+              style={styles.resetPortion}
+            >
+              <Text style={styles.link}>Reset to 1</Text>
+            </Pressable>
+          )}
+          <IconButton icon="edit" label="Manage containers" onPress={() => setManaging(true)} />
+        </View>
+        {selected.kind === 'container' && ml === null && (
+          <Text style={styles.danger} accessibilityRole="alert">
+            Total must be between 1 and 10,000 ml.
           </Text>
         )}
-        {selected?.kind === 'custom' && (
-          <View style={styles.line}>
-            <TextInput
-              accessibilityLabel={`Custom volume in ${volumeUnit(units)}`}
-              value={selected.text}
-              onChangeText={(text) =>
-                setVolume({ kind: 'custom', text: text.replace(/[^\d.,]/g, '') })
-              }
-              keyboardType="decimal-pad"
-              placeholder={units === 'imperial' ? '12' : '330'}
-              placeholderTextColor={Colors.textMuted}
-              style={[styles.input, styles.ml]}
-              autoFocus
-            />
-            <Text style={Typography.bodySecondary}>{volumeUnit(units)}</Text>
-          </View>
-        )}
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>When</Text>
-        <View style={styles.chips}>
-          <Chip
-            label="Now"
-            selected={when.kind === 'now'}
-            onPress={() => setWhen({ kind: 'now' })}
-          />
-          <Chip
-            label="Today"
-            selected={when.kind === 'at' && when.daysAgo === 0}
-            onPress={() => pickDay(0)}
-          />
-          <Chip
-            label="Yesterday"
-            selected={when.kind === 'at' && when.daysAgo === 1}
-            onPress={() => pickDay(1)}
-          />
-          <Chip
-            label="Other day"
-            selected={when.kind === 'at' && when.daysAgo > 1}
-            onPress={() => pickDay(when.kind === 'at' && when.daysAgo > 1 ? when.daysAgo : 2)}
-          />
-        </View>
-        {when.kind === 'at' && (
-          <View style={styles.drums}>
-            <DrumPicker
-              label="day"
-              items={days}
-              value={when.daysAgo}
-              width={150}
-              onChange={(daysAgo) => setWhen({ ...when, daysAgo })}
-            />
-            <DrumPicker
-              label="hour"
-              items={HOURS}
-              value={when.hour}
-              onChange={(hour) => setWhen({ ...when, hour })}
-            />
-            <DrumPicker
-              label="min"
-              items={MINUTES}
-              value={when.minute}
-              onChange={(minute) => setWhen({ ...when, minute })}
-            />
-          </View>
-        )}
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Note</Text>
-        <NoteField value={note} onChangeText={setNote} placeholder="Optional" />
-      </View>
-
-      <View style={styles.card} testID="drink-preview">
-        {preview && ml ? (
+      <View style={styles.formSection}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Change drink time"
+          accessibilityState={{ expanded: editingWhen }}
+          aria-expanded={editingWhen}
+          onPress={() => setEditingWhen((value) => !value)}
+          style={styles.whenRow}
+        >
+          <Text style={Typography.body}>When</Text>
+          <Text style={[Typography.bodySecondary, styles.whenValue]}>
+            {when.kind === 'now'
+              ? 'Now'
+              : `${dayLabel(when.daysAgo, now)} · ${String(when.hour).padStart(2, '0')}:${String(when.minute).padStart(2, '0')}`}
+          </Text>
+          <Icon name={editingWhen ? 'chevronDown' : 'chevron'} color={Colors.textMuted} size={18} />
+        </Pressable>
+        {editingWhen && (
           <>
-            <Text style={Typography.body}>
-              {formatVolume(ml, units)} × {abv}% → {formatDrinks(preview.alcoholG)} g alcohol →{' '}
-              <Text style={styles.bold}>{formatDrinks(preview.stdDrinks)} std drinks</Text>
-            </Text>
-            {balance !== undefined && (
-              <Text style={Typography.bodySecondary}>
-                Balance after:{' '}
-                <Text
-                  style={{
-                    color: balance - preview.stdDrinks < 0 ? Colors.drunk : Colors.earned,
-                    fontWeight: '700',
-                  }}
-                >
-                  {formatDrinks(balance - preview.stdDrinks)}
-                </Text>
-              </Text>
+            <View
+              style={styles.chips}
+              accessibilityRole="radiogroup"
+              accessibilityLabel="Drink time"
+            >
+              <Chip
+                label="Now"
+                selected={when.kind === 'now'}
+                onPress={() => {
+                  setWhen({ kind: 'now' });
+                  setEditingWhen(false);
+                }}
+              />
+              <Chip
+                label="Today"
+                selected={when.kind === 'at' && when.daysAgo === 0}
+                onPress={() => pickDay(0)}
+              />
+              <Chip
+                label="Yesterday"
+                selected={when.kind === 'at' && when.daysAgo === 1}
+                onPress={() => pickDay(1)}
+              />
+              <Chip
+                label="Other day"
+                selected={when.kind === 'at' && when.daysAgo > 1}
+                onPress={() => pickDay(when.kind === 'at' && when.daysAgo > 1 ? when.daysAgo : 2)}
+              />
+            </View>
+            {when.kind === 'at' && (
+              <View style={styles.drums}>
+                <DrumPicker
+                  label="day"
+                  items={days}
+                  value={when.daysAgo}
+                  width={140}
+                  itemTextStyle={{ fontSize: 14 }}
+                  visibleCount={3}
+                  onChange={(daysAgo) => setWhen({ ...when, daysAgo })}
+                />
+                <DrumPicker
+                  label="hour"
+                  items={HOURS}
+                  value={when.hour}
+                  width={48}
+                  visibleCount={3}
+                  onChange={(hour) => setWhen({ ...when, hour })}
+                />
+                <DrumPicker
+                  label="min"
+                  items={MINUTES}
+                  value={when.minute}
+                  width={48}
+                  visibleCount={3}
+                  onChange={(minute) => setWhen({ ...when, minute })}
+                />
+              </View>
             )}
           </>
-        ) : (
-          <Text style={Typography.bodySecondary}>Pick a container or enter a volume.</Text>
         )}
       </View>
 
-      {log.error && (
-        <Text style={styles.danger} accessibilityRole="alert">
-          {log.error.message}
-        </Text>
-      )}
-      {logged && !log.isPending && <Text style={styles.success}>{logged}</Text>}
-      <Button
-        title="Log drink"
-        loading={log.isPending}
-        disabled={!preview}
-        onPress={() => {
-          setLogged(null);
-          log.mutate();
-        }}
-      />
+      <NoteField value={note} onChangeText={setNote} compact placeholder="Note (optional)" />
+
       <ContainerManager
         visible={managing}
         onClose={() => {
@@ -441,30 +515,40 @@ export function DrinksScreen() {
           setPortion(1);
         }}
       />
-    </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    padding: Spacing.md,
-    gap: Spacing.md,
-    width: '100%',
-    maxWidth: 640,
-    alignSelf: 'center',
-  },
   card: { ...Palette.card, gap: Spacing.sm },
-  sectionTitle: { ...Typography.body, fontWeight: '700' },
-  drums: { flexDirection: 'row', justifyContent: 'center', gap: Spacing.lg },
-  portionRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg },
+  formSection: { gap: Spacing.sm },
+  amountFields: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm },
+  strengthField: { width: 92, marginStart: Spacing.sm, gap: Spacing.xs },
+  strengthDrums: { flexDirection: 'row', gap: Spacing.xs },
+  fieldLabel: { textAlign: 'center' },
+  customField: { width: 90, gap: Spacing.xs },
+  customInput: { height: 132, justifyContent: 'center' },
+  whenRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    minHeight: 48,
+    paddingVertical: Spacing.sm,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: Colors.border,
+  },
+  whenValue: { flex: 1, textAlign: 'right' },
+  drums: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: Spacing.sm },
   portionSummary: { gap: Spacing.xs },
-  portionTotal: { ...Typography.body, fontSize: 24, fontWeight: '700' },
   resetPortion: { minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' },
   line: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  flex: { flex: 1 },
+  flex: { flex: 1, minWidth: 0 },
   bold: { fontWeight: '700' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
   chip: {
+    minHeight: 44,
+    justifyContent: 'center',
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
     borderRadius: Radius.lg,
@@ -474,6 +558,7 @@ const styles = StyleSheet.create({
   chipSelected: { borderColor: Colors.accent, backgroundColor: Colors.surfaceRaised },
   input: {
     ...Typography.body,
+    minHeight: 48,
     backgroundColor: Colors.surfaceRaised,
     borderRadius: Radius.sm,
     borderWidth: 1,

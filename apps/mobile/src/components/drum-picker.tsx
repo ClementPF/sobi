@@ -9,6 +9,9 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   type ScrollViewInstance,
+  type ScrollViewProps,
+  type StyleProp,
+  type TextStyle,
   type ViewStyle,
 } from 'react-native';
 
@@ -23,12 +26,14 @@ export interface DrumPickerProps<T> {
   items: readonly DrumItem<T>[];
   value: T;
   onChange(value: T): void;
-  /** Shown under the drum, e.g. "min". */
+  /** Accessible name, also shown unless labelPosition is hidden. */
   label?: string;
+  labelPosition?: 'above' | 'below' | 'hidden';
+  itemTextStyle?: StyleProp<TextStyle>;
   itemHeight?: number;
   /** Odd number of rows visible; the middle row is the selection. */
   visibleCount?: number;
-  width?: number;
+  width?: ViewStyle['width'];
   testID?: string;
 }
 
@@ -60,7 +65,9 @@ export function DrumPicker<T>({
   value,
   onChange,
   label,
-  itemHeight = 40,
+  labelPosition = 'below',
+  itemTextStyle,
+  itemHeight = 44,
   visibleCount = 5,
   width = 80,
   testID,
@@ -116,6 +123,23 @@ export function DrumPicker<T>({
     onChange(item.value);
   };
 
+  const onKeyDown: NonNullable<ScrollViewProps['onKeyDown']> = (event) => {
+    const key = event.nativeEvent.key;
+    const offsets: Record<string, number> = {
+      ArrowUp: 1,
+      ArrowRight: 1,
+      ArrowDown: -1,
+      ArrowLeft: -1,
+    };
+    let index = selectedIndex;
+    if (key === 'Home') index = 0;
+    else if (key === 'End') index = items.length - 1;
+    else if (key in offsets) index += offsets[key]!;
+    else return;
+    event.preventDefault();
+    select(Math.min(Math.max(index, 0), items.length - 1));
+  };
+
   const height = itemHeight * visibleCount;
   const webSnap = useMemo(
     () => (Platform.OS === 'web' ? ({ scrollSnapType: 'y mandatory' } as ViewStyle) : null),
@@ -125,20 +149,40 @@ export function DrumPicker<T>({
     () => (Platform.OS === 'web' ? ({ scrollSnapAlign: 'center' } as ViewStyle) : null),
     [],
   );
+  // Web rows are pointer targets only. The slider itself owns keyboard and screen-reader input.
+  const Item = Platform.OS === 'web' ? View : Pressable;
 
   return (
     <View style={[styles.wrapper, { width }]}>
+      {label && labelPosition === 'above' ? <Text style={styles.label}>{label}</Text> : null}
       <View style={[styles.drum, { height }]}>
         <View
           pointerEvents="none"
           style={[styles.highlight, { top: padding, height: itemHeight }]}
         />
         <ScrollView
+          onKeyDown={onKeyDown}
           ref={scrollRef}
           testID={testID}
+          accessible
+          tabIndex={0}
           accessibilityRole="adjustable"
           accessibilityLabel={label}
-          accessibilityValue={{ text: items[selectedIndex]?.label }}
+          accessibilityValue={{
+            min: 0,
+            max: items.length - 1,
+            now: selectedIndex,
+            text: items[selectedIndex]?.label,
+          }}
+          aria-valuemin={0}
+          aria-valuemax={items.length - 1}
+          aria-valuenow={selectedIndex}
+          aria-valuetext={items[selectedIndex]?.label}
+          accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
+          onAccessibilityAction={(event) => {
+            const delta = event.nativeEvent.actionName === 'increment' ? 1 : -1;
+            select(Math.min(Math.max(selectedIndex + delta, 0), items.length - 1));
+          }}
           showsVerticalScrollIndicator={false}
           snapToInterval={itemHeight}
           decelerationRate="fast"
@@ -155,21 +199,32 @@ export function DrumPicker<T>({
           style={webSnap}
         >
           {items.map((item, index) => (
-            <Pressable
+            <Item
               key={index}
-              accessibilityRole="button"
-              accessibilityLabel={`${label ?? 'value'} ${item.label}`}
-              onPress={() => select(index)}
+              {...(Platform.OS === 'web'
+                ? { onClick: () => select(index), 'aria-hidden': true }
+                : {
+                    accessibilityRole: 'button' as const,
+                    accessibilityLabel: `${label ?? 'value'} ${item.label}`,
+                    onPress: () => select(index),
+                  })}
               style={[styles.item, { height: itemHeight }, webSnapItem]}
             >
-              <Text style={[styles.itemText, index === selectedIndex && styles.itemTextSelected]}>
+              <Text
+                numberOfLines={1}
+                style={[
+                  styles.itemText,
+                  itemTextStyle,
+                  index === selectedIndex && styles.itemTextSelected,
+                ]}
+              >
                 {item.label}
               </Text>
-            </Pressable>
+            </Item>
           ))}
         </ScrollView>
       </View>
-      {label ? <Text style={styles.label}>{label}</Text> : null}
+      {label && labelPosition === 'below' ? <Text style={styles.label}>{label}</Text> : null}
     </View>
   );
 }
@@ -187,7 +242,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.accent,
   },
   item: { alignItems: 'center', justifyContent: 'center' },
-  itemText: { ...Typography.body, fontSize: 20, color: Colors.textMuted },
+  itemText: { ...Typography.body, maxWidth: '100%', fontSize: 20, color: Colors.textMuted },
   itemTextSelected: { color: Colors.text, fontWeight: '700' },
   label: Typography.caption,
 });

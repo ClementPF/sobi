@@ -14,12 +14,14 @@ export function NoteField({
   onChangeText,
   onSave,
   saving = false,
+  compact = false,
   placeholder = 'Add a note',
 }: {
   value: string | null;
   onChangeText?(text: string): void;
   onSave?(note: string | null): void;
   saving?: boolean;
+  compact?: boolean;
   placeholder?: string;
 }) {
   const [text, setText] = useState(value ?? '');
@@ -42,7 +44,7 @@ export function NoteField({
         placeholderTextColor={Colors.textMuted}
         maxLength={NOTE_MAX}
         multiline
-        style={styles.input}
+        style={[styles.input, compact && styles.compact]}
       />
       {saving && <Text style={Typography.caption}>Saving…</Text>}
     </View>
@@ -50,6 +52,7 @@ export function NoteField({
 }
 
 const styles = StyleSheet.create({
+  compact: { minHeight: 44 },
   wrap: { gap: Spacing.xs },
   input: {
     ...Typography.body,

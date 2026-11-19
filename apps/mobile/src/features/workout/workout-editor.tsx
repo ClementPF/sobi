@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   addExercise,
@@ -16,7 +17,9 @@ import type { ExerciseInput, Metric, Units, Workout } from '@/api/types';
 import { useUnits } from '@/auth/session';
 import { Button } from '@/components/button';
 import { ConfirmDialog } from '@/components/confirm-dialog';
+import { Icon, IconButton } from '@/components/icon';
 import { CenteredLoading, EmptyState } from '@/components/list-parts';
+import { Screen } from '@/components/screen';
 import { displayEarnPer, METRIC_LABELS, metricUnit, parseEarnPer } from '@/lib/conversions';
 import { queryKeys } from '@/lib/queries';
 import { Colors, Palette, Radius, Spacing, Typography } from '@/theme';
@@ -133,20 +136,19 @@ function ExerciseRow({
           placeholderTextColor={Colors.textMuted}
           style={[styles.input, styles.flex]}
         />
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Remove exercise"
-          onPress={onRemove}
-        >
-          <Text style={styles.remove}>Remove</Text>
-        </Pressable>
+        <IconButton icon="trash" label="Remove exercise" color={Colors.error} onPress={onRemove} />
       </View>
-      <View style={styles.segments}>
+      <View
+        style={styles.segments}
+        accessibilityRole="radiogroup"
+        accessibilityLabel="Exercise metric"
+      >
         {METRICS.map((metric) => (
           <Pressable
             key={metric}
             accessibilityRole="radio"
-            accessibilityState={{ selected: row.metric === metric }}
+            accessibilityState={{ checked: row.metric === metric }}
+            aria-checked={row.metric === metric}
             onPress={() =>
               onChange({
                 ...row,
@@ -161,25 +163,28 @@ function ExerciseRow({
         ))}
       </View>
       <View style={styles.rowLine}>
-        <Text style={Typography.bodySecondary}>Earn</Text>
-        <TextInput
-          accessibilityLabel="Drinks earned"
-          value={row.earnDrinks}
-          onChangeText={(earnDrinks) => onChange({ ...row, earnDrinks })}
-          keyboardType="decimal-pad"
-          style={[styles.input, styles.number]}
-        />
-        <Text style={Typography.bodySecondary}>drink(s) per</Text>
-        <TextInput
-          accessibilityLabel="Units per reward"
-          value={row.earnPer}
-          onChangeText={(earnPer) => onChange({ ...row, earnPer })}
-          keyboardType={
-            row.metric === 'meters' && units === 'imperial' ? 'decimal-pad' : 'number-pad'
-          }
-          style={[styles.input, styles.number]}
-        />
-        <Text style={Typography.bodySecondary}>{metricUnit(row.metric, units)}</Text>
+        <View style={styles.field}>
+          <Text style={Typography.caption}>Drinks earned</Text>
+          <TextInput
+            accessibilityLabel="Drinks earned"
+            value={row.earnDrinks}
+            onChangeText={(earnDrinks) => onChange({ ...row, earnDrinks })}
+            keyboardType="decimal-pad"
+            style={styles.input}
+          />
+        </View>
+        <View style={styles.field}>
+          <Text style={Typography.caption}>Per {metricUnit(row.metric, units)}</Text>
+          <TextInput
+            accessibilityLabel="Units per reward"
+            value={row.earnPer}
+            onChangeText={(earnPer) => onChange({ ...row, earnPer })}
+            keyboardType={
+              row.metric === 'meters' && units === 'imperial' ? 'decimal-pad' : 'number-pad'
+            }
+            style={styles.input}
+          />
+        </View>
       </View>
     </View>
   );
@@ -208,56 +213,69 @@ function Editor({ workout }: { workout?: Workout }) {
   });
 
   return (
-    <ScrollView style={Palette.screen} contentContainerStyle={styles.container}>
-      <TextInput
-        accessibilityLabel="Workout name"
-        value={name}
-        onChangeText={setName}
-        placeholder="Workout name, e.g. Push day"
-        placeholderTextColor={Colors.textMuted}
-        style={[styles.input, styles.title]}
-      />
-      {rows.map((row) => (
-        <ExerciseRow
-          key={row.key}
-          row={row}
-          units={units}
-          onChange={(next) => setRows((prev) => prev.map((r) => (r.key === row.key ? next : r)))}
-          onRemove={() => setRows((prev) => prev.filter((r) => r.key !== row.key))}
+    <SafeAreaView edges={['bottom']} style={Palette.screen}>
+      <Screen
+        footer={
+          <>
+            {saveMutation.error && (
+              <Text style={styles.error} accessibilityRole="alert">
+                {saveMutation.error.message}
+              </Text>
+            )}
+            <Button
+              title="Save"
+              loading={saveMutation.isPending}
+              disabled={!name.trim()}
+              onPress={() => saveMutation.mutate()}
+            />
+          </>
+        }
+      >
+        <Text style={Typography.caption}>Workout name</Text>
+        <TextInput
+          accessibilityLabel="Workout name"
+          value={name}
+          onChangeText={setName}
+          placeholder="Workout name, e.g. Push day"
+          placeholderTextColor={Colors.textMuted}
+          style={[styles.input, styles.title]}
         />
-      ))}
-      <Button
-        title="Add exercise"
-        variant="secondary"
-        onPress={() => setRows((prev) => [...prev, newRow()])}
-      />
-      {saveMutation.error && (
-        <Text style={styles.error} accessibilityRole="alert">
-          {saveMutation.error.message}
+        {rows.map((row) => (
+          <ExerciseRow
+            key={row.key}
+            row={row}
+            units={units}
+            onChange={(next) => setRows((prev) => prev.map((r) => (r.key === row.key ? next : r)))}
+            onRemove={() => setRows((prev) => prev.filter((r) => r.key !== row.key))}
+          />
+        ))}
+        <Button
+          title="Add exercise"
+          variant="secondary"
+          icon={<Icon name="plus" color={Colors.text} />}
+          onPress={() => setRows((prev) => [...prev, newRow()])}
+        />
+        {workout && (
+          <Button
+            title="Delete workout"
+            variant="secondary"
+            onPress={() => setConfirmDelete(true)}
+          />
+        )}
+        <Text style={Typography.caption}>
+          Rate changes apply to sets logged from now on; past sets keep what they earned.
         </Text>
-      )}
-      <Button
-        title="Save"
-        loading={saveMutation.isPending}
-        disabled={!name.trim()}
-        onPress={() => saveMutation.mutate()}
-      />
-      {workout && (
-        <Button title="Delete workout" variant="secondary" onPress={() => setConfirmDelete(true)} />
-      )}
-      <Text style={Typography.caption}>
-        Rate changes apply to sets logged from now on; past sets keep what they earned.
-      </Text>
-      <ConfirmDialog
-        visible={confirmDelete}
-        title="Delete workout?"
-        message="Past sessions and what they earned are kept."
-        confirmTitle="Delete"
-        loading={remove.isPending}
-        onConfirm={() => remove.mutate()}
-        onCancel={() => setConfirmDelete(false)}
-      />
-    </ScrollView>
+        <ConfirmDialog
+          visible={confirmDelete}
+          title="Delete workout?"
+          message="Past sessions and what they earned are kept."
+          confirmTitle="Delete"
+          loading={remove.isPending}
+          onConfirm={() => remove.mutate()}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      </Screen>
+    </SafeAreaView>
   );
 }
 
@@ -273,18 +291,13 @@ export function EditWorkoutScreen({ id }: { id: string }) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    padding: Spacing.md,
-    gap: Spacing.md,
-    width: '100%',
-    maxWidth: 640,
-    alignSelf: 'center',
-  },
   card: { ...Palette.card, gap: Spacing.sm },
   rowLine: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, flexWrap: 'wrap' },
   flex: { flex: 1 },
+  field: { flex: 1, minWidth: 0, gap: Spacing.xs },
   input: {
     ...Typography.body,
+    minHeight: 48,
     backgroundColor: Colors.surfaceRaised,
     borderRadius: Radius.sm,
     borderWidth: 1,
@@ -293,11 +306,11 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
   },
   title: { fontSize: 20, fontWeight: '700' },
-  number: { width: 72, textAlign: 'center' },
-  remove: { ...Typography.body, color: Colors.error },
   segments: { flexDirection: 'row', gap: Spacing.sm },
   segment: {
     flex: 1,
+    minHeight: 44,
+    justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: Spacing.xs,
     borderRadius: Radius.sm,
