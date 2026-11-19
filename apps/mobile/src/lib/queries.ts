@@ -4,6 +4,7 @@ import { useCallback } from 'react';
 export const queryKeys = {
   dashboard: (range: string) => ['dashboard', range] as const,
   history: ['history'] as const,
+  historyDay: (date: string, tz: string) => ['history', 'day', date, tz] as const,
   workouts: ['workouts'] as const,
   workout: (id: string) => ['workouts', id] as const,
   activeSession: ['sessions', 'active'] as const,

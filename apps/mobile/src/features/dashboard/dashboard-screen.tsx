@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -6,12 +6,14 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'r
 import { getDashboard } from '@/api/endpoints';
 import type { Dashboard, DashboardRange } from '@/api/types';
 import { Button } from '@/components/button';
-import { BalanceChart, WeeklyBars } from '@/components/charts';
+import { BalanceChart } from '@/components/charts';
 import { CenteredLoading, EmptyState } from '@/components/list-parts';
 import { formatDrinks } from '@/lib/conversions';
 import { queryKeys } from '@/lib/queries';
 import { deviceTimeZone, isoWeekdayName } from '@/lib/time';
 import { Colors, Palette, Radius, Spacing, Typography } from '@/theme';
+
+import { WeeklyActivity } from './weekly-activity';
 
 const RANGES: { value: DashboardRange; label: string; description: string }[] = [
   { value: '1d', label: '1d', description: 'Today' },
@@ -114,25 +116,18 @@ export function DashboardView({
       </View>
       {dashboard.rangeEarned === 0 && dashboard.rangeDrunk === 0 ? (
         <View style={styles.section} testID="empty-period">
-          <Text style={styles.sectionTitle}>No activity in this period</Text>
+          <Text style={styles.sectionTitle}>No drinks earned or drunk in this period</Text>
           <Text style={Typography.bodySecondary}>Your all-time balance is shown above.</Text>
         </View>
       ) : (
-        <>
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Balance</Text>
-            <BalanceChart series={dashboard.series} />
-          </View>
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Weekly earned vs drunk</Text>
-            <View style={styles.legend}>
-              <Text style={[Typography.caption, { color: Colors.earned }]}>Earned</Text>
-              <Text style={[Typography.caption, { color: Colors.drunk }]}>Drunk</Text>
-            </View>
-            <WeeklyBars weekly={dashboard.weekly} />
-          </View>
-        </>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Balance</Text>
+          <BalanceChart series={dashboard.series} />
+        </View>
       )}
+      <View style={styles.section}>
+        <WeeklyActivity dashboard={dashboard} />
+      </View>
       <View style={styles.tiles}>
         <View style={styles.tileRow} testID="stats-row">
           <StatTile label="Drunk / week" value={formatDrinks(stats.avgDrunkPerWeek)} />
@@ -158,6 +153,7 @@ export function DashboardView({
 }
 
 export function DashboardScreen() {
+  const client = useQueryClient();
   const [range, setRange] = useState<DashboardRange>('30d');
   const query = useQuery({
     queryKey: queryKeys.dashboard(range),
@@ -183,7 +179,12 @@ export function DashboardScreen() {
       refreshControl={
         <RefreshControl
           refreshing={query.isRefetching}
-          onRefresh={() => void query.refetch()}
+          onRefresh={() =>
+            void Promise.all([
+              query.refetch(),
+              client.invalidateQueries({ queryKey: queryKeys.history }),
+            ])
+          }
           tintColor={Colors.text}
         />
       }
@@ -229,7 +230,6 @@ const styles = StyleSheet.create({
   rangeTextSelected: { fontWeight: '700' },
   section: { ...Palette.card, gap: Spacing.sm },
   sectionTitle: { ...Typography.body, fontWeight: '700' },
-  legend: { flexDirection: 'row', gap: Spacing.md },
   tiles: { gap: Spacing.sm },
   tileRow: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'stretch' },
   tile: { ...Palette.card, flex: 1, minWidth: 0, justifyContent: 'center', gap: Spacing.xs },

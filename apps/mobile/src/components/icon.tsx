@@ -11,6 +11,7 @@ const NAMES = {
   close: { ios: 'xmark', android: 'close', web: 'close' },
   check: { ios: 'checkmark', android: 'check', web: 'check' },
   chevron: { ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' },
+  chevronLeft: { ios: 'chevron.left', android: 'chevron_left', web: 'chevron_left' },
   chevronDown: { ios: 'chevron.down', android: 'expand_more', web: 'expand_more' },
   settings: { ios: 'gearshape', android: 'settings', web: 'settings' },
 } satisfies Record<string, SymbolViewProps['name']>;

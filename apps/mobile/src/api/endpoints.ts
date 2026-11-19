@@ -8,6 +8,7 @@ import type {
   ExerciseInput,
   GoogleCodeExchangeRequest,
   History,
+  HistoryDay,
   NewDrink,
   Page,
   SessionDetail,
@@ -96,5 +97,7 @@ export const getDashboard = (range: DashboardRange, tz: string) =>
   api.get<Dashboard>('/dashboard', { query: { range, tz } });
 export const getHistory = (tz: string, cursor?: string) =>
   api.get<History>('/history', { query: { tz, cursor } });
+export const getHistoryDay = (date: string, tz: string, signal?: AbortSignal) =>
+  api.get<HistoryDay>('/history/day', { query: { date, tz }, signal });
 export const deleteHistoryEntries = (body: { sessionIds: string[]; drinkIds: string[] }) =>
   api.post<{ sessions: number; drinks: number }>('/history/delete', body);
